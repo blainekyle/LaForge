@@ -1,0 +1,55 @@
+{
+  "app": {
+    "title": "LaForge - Fossify Filemanager (v1.6.1)",
+    "apk_path": "./payload.apk",
+    "package_name": "org.fossify.filemanager",
+    "activity_name": "org.fossify.filemanager.activities.SplashActivity.Green"
+  },
+  "runtime": {
+    "emulator_path": "emulator",
+    "adb_path": "adb",
+    "avd_name": "LaForge_x86_64_API34",
+    "snapshot": "default_boot",
+    "gpu_mode": "host",
+    "whpx": true,
+    "headless": true,
+    "boot_timeout_sec": 60
+  },
+  "display": {
+    "scrcpy_path": "bridge/scrcpy.exe",
+    "render_driver": "direct3d",
+    "window": {
+      "x": 100,
+      "y": 100,
+      "width": 1280,
+      "height": 720,
+      "borderless": true,
+      "always_on_top": false,
+      "fullscreen": false
+    },
+    "vsync": true,
+    "max_fps": 60,
+    "stay_awake": true
+  },
+  "relays": {
+    "remote_staging_dir": "/sdcard/Download",
+    "associations": {
+      ".zip": {
+        "mime_type": "application/zip",
+        "action": "android.intent.action.VIEW"
+      },
+      ".txt": {
+        "mime_type": "text/plain",
+        "action": "android.intent.action.VIEW"
+      },
+      ".pdf": {
+        "mime_type": "application/pdf",
+        "action": "android.intent.action.VIEW"
+      },
+      ".ica": {
+        "mime_type": "application/x-ica",
+        "action": "android.intent.action.VIEW"
+      }
+    }
+  }
+}

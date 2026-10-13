@@ -130,7 +130,8 @@ public static class Program
     {
         try
         {
-            string configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
+            string baseDir = AppContext.BaseDirectory;
+            string configPath = Path.Combine(baseDir, "config.json");
             if (!File.Exists(configPath))
             {
                 configPath = Path.Combine(Directory.GetCurrentDirectory(), "config.json");
@@ -139,6 +140,9 @@ public static class Program
             bool dryRun = false;
             bool relayOnly = false;
             string? relayFile = null;
+            string? inspectApk = null;
+            string? forgeApk = null;
+            string forgeOutDir = Path.Combine(Directory.GetCurrentDirectory(), "dist");
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -160,11 +164,47 @@ public static class Program
                 {
                     relayFile = args[++i];
                 }
+                else if (arg.Equals("--inspect", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    inspectApk = args[++i];
+                }
+                else if (arg.Equals("--forge", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    forgeApk = args[++i];
+                }
+                else if (arg.Equals("--out", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    forgeOutDir = args[++i];
+                }
                 else if (!arg.StartsWith('-'))
                 {
-                    // Positional argument passed via Windows file association (e.g. launcher.exe "C:\path\file.ica")
                     relayFile = arg;
                 }
+            }
+
+            if (!string.IsNullOrWhiteSpace(inspectApk))
+            {
+                ApkMetadata meta = ApkManifestParser.ParseApk(inspectApk);
+                Console.WriteLine($"[LaForge APK Inspector]");
+                Console.WriteLine($"  APK File          : {meta.ApkPath}");
+                Console.WriteLine($"  Package Name      : {meta.PackageName}");
+                Console.WriteLine($"  Version           : {meta.VersionName} ({meta.VersionCode})");
+                Console.WriteLine($"  Launcher Activity : {meta.LauncherActivity}");
+                Console.WriteLine($"  Total Activities  : {meta.AllActivities.Count}");
+                Console.WriteLine($"  VIEW MIME Types   : {(meta.MimeTypes.Count > 0 ? string.Join(", ", meta.MimeTypes) : "(none declared)")}");
+                return 0;
+            }
+
+            if (!string.IsNullOrWhiteSpace(forgeApk))
+            {
+                ApkMetadata meta = ApkManifestParser.ParseApk(forgeApk);
+                string bundleDir = ApkPackager.ForgeBundle(forgeApk, forgeOutDir);
+                Console.WriteLine($"[LaForge APK Packager] Forged standalone bundle:");
+                Console.WriteLine($"  Source APK        : {meta.ApkPath}");
+                Console.WriteLine($"  Package Name      : {meta.PackageName} (v{meta.VersionName})");
+                Console.WriteLine($"  Launcher Activity : {meta.LauncherActivity}");
+                Console.WriteLine($"  Output Bundle Dir : {bundleDir}");
+                return 0;
             }
 
             if (!File.Exists(configPath))
@@ -173,6 +213,7 @@ public static class Program
                 return 1;
             }
 
+            string configDir = Path.GetDirectoryName(Path.GetFullPath(configPath)) ?? baseDir;
             var jsonOptions = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
@@ -188,7 +229,7 @@ public static class Program
                 // Step 1: Launch headless Android runtime via subprocess (-snapshot for fast boot)
                 var emuArgs = BuildEmulatorArgs(config.Runtime);
                 Console.WriteLine($"[LaForge] Step 1/4: Booting Headless Android Runtime...");
-                Console.WriteLine($"  Command: {config.Runtime.EmulatorPath} { string.Join(' ', emuArgs) }");
+                Console.WriteLine($"  Command: {config.Runtime.EmulatorPath} {string.Join(' ', emuArgs)}");
                 if (!dryRun)
                 {
                     StartBackgroundProcess(config.Runtime.EmulatorPath, emuArgs, hidden: true);
@@ -200,20 +241,30 @@ public static class Program
                 var win = config.Display.Window;
                 Console.WriteLine($"[LaForge] Step 2/4: Initializing Display Bridge (scrcpy + SDL2/Direct3D)...");
                 Console.WriteLine($"  Window Boundaries: X={win.X}, Y={win.Y}, W={win.Width}, H={win.Height}, Borderless={win.Borderless}");
-                Console.WriteLine($"  Command: {config.Display.ScrcpyPath} { string.Join(' ', scrcpyArgs) }");
+                Console.WriteLine($"  Command: {config.Display.ScrcpyPath} {string.Join(' ', scrcpyArgs)}");
                 if (!dryRun)
                 {
                     StartBackgroundProcess(config.Display.ScrcpyPath, scrcpyArgs, hidden: false);
                 }
 
-                // Step 3: Execute target APK via 'adb shell am start'
-                if (File.Exists(config.App.ApkPath))
+                // Step 3: Sideload payload.apk (if present) and execute target APK via 'adb shell am start'
+                string resolvedApkPath = Path.IsPathRooted(config.App.ApkPath)
+                    ? config.App.ApkPath
+                    : Path.GetFullPath(Path.Combine(configDir, config.App.ApkPath));
+
+                if (File.Exists(resolvedApkPath))
                 {
-                    Console.WriteLine($"[LaForge] Detected sideload payload: {config.App.ApkPath}");
+                    Console.WriteLine($"[LaForge] Sideloading Payload APK: {resolvedApkPath}");
+                    Console.WriteLine($"  Install Cmd: {config.Runtime.AdbPath} install -r \"{resolvedApkPath}\"");
+                    if (!dryRun)
+                    {
+                        RunCheckedProcess(config.Runtime.AdbPath, new[] { "install", "-r", resolvedApkPath });
+                    }
                 }
+
                 var apkArgs = BuildApkLaunchArgs(config.App);
                 Console.WriteLine($"[LaForge] Step 3/4: Launching Target APK...");
-                Console.WriteLine($"  Command: {config.Runtime.AdbPath} { string.Join(' ', apkArgs) }");
+                Console.WriteLine($"  Command: {config.Runtime.AdbPath} {string.Join(' ', apkArgs)}");
                 if (!dryRun)
                 {
                     RunCheckedProcess(config.Runtime.AdbPath, apkArgs);

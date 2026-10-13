@@ -1,0 +1,370 @@
+using System.IO.Compression;
+using System.Text;
+
+namespace LaForge.Launcher;
+
+public sealed class ApkMetadata
+{
+    public string ApkPath { get; set; } = "";
+    public string PackageName { get; set; } = "";
+    public string VersionName { get; set; } = "";
+    public int VersionCode { get; set; }
+    public string LauncherActivity { get; set; } = "";
+    public List<string> AllActivities { get; set; } = new();
+    public List<string> MimeTypes { get; set; } = new();
+    public List<string> Schemes { get; set; } = new();
+}
+
+/// <summary>
+/// Zero-dependency Android Binary XML (AXML) parser that extracts package,
+/// main launcher activity, and intent-filter MIME types directly from an APK archive.
+/// </summary>
+public static class ApkManifestParser
+{
+    private const ushort RES_XML_TYPE = 0x0003;
+    private const ushort RES_STRING_POOL_TYPE = 0x0001;
+    private const ushort RES_XML_START_ELEMENT_TYPE = 0x0102;
+    private const ushort RES_XML_END_ELEMENT_TYPE = 0x0103;
+    private const uint UTF8_FLAG = 1u << 8;
+
+    public static ApkMetadata ParseApk(string apkPath)
+    {
+        string fullPath = Path.GetFullPath(apkPath);
+        if (!File.Exists(fullPath))
+        {
+            throw new FileNotFoundException($"APK file not found: {fullPath}");
+        }
+
+        using var archive = ZipFile.OpenRead(fullPath);
+        var manifestEntry = archive.GetEntry("AndroidManifest.xml")
+            ?? throw new InvalidDataException($"'{fullPath}' does not contain AndroidManifest.xml.");
+
+        using var stream = manifestEntry.Open();
+        using var ms = new MemoryStream();
+        stream.CopyTo(ms);
+        byte[] data = ms.ToArray();
+
+        return ParseManifestBytes(data, fullPath);
+    }
+
+    private static ApkMetadata ParseManifestBytes(byte[] bytes, string apkPath)
+    {
+        if (bytes.Length < 8 || BitConverter.ToUInt16(bytes, 0) != RES_XML_TYPE)
+        {
+            throw new InvalidDataException("Invalid binary AndroidManifest.xml header.");
+        }
+
+        var meta = new ApkMetadata { ApkPath = apkPath };
+        string[] strings = Array.Empty<string>();
+
+        int offset = BitConverter.ToUInt16(bytes, 2); // Root header size (typically 8)
+        int fileSize = Math.Min(bytes.Length, BitConverter.ToInt32(bytes, 4));
+
+        string? currentActivity = null;
+        bool inIntentFilter = false;
+        bool hasMainAction = false;
+        bool hasLauncherCategory = false;
+        bool hasViewAction = false;
+        var filterMimeTypes = new List<string>();
+        var filterSchemes = new List<string>();
+        string? firstViewActivity = null;
+
+        while (offset + 8 <= fileSize)
+        {
+            ushort chunkType = BitConverter.ToUInt16(bytes, offset);
+            ushort headerSize = BitConverter.ToUInt16(bytes, offset + 2);
+            int chunkSize = BitConverter.ToInt32(bytes, offset + 4);
+            if (chunkSize <= 0 || offset + chunkSize > fileSize)
+            {
+                break;
+            }
+
+            if (chunkType == RES_STRING_POOL_TYPE)
+            {
+                strings = ReadStringPool(bytes, offset, headerSize, chunkSize);
+            }
+            else if (chunkType == RES_XML_START_ELEMENT_TYPE && offset + 36 <= fileSize)
+            {
+                int nameIdx = BitConverter.ToInt32(bytes, offset + 20);
+                string elemName = GetString(strings, nameIdx);
+
+                ushort attrStart = BitConverter.ToUInt16(bytes, offset + 24);
+                ushort attrSize = BitConverter.ToUInt16(bytes, offset + 26);
+                ushort attrCount = BitConverter.ToUInt16(bytes, offset + 28);
+
+                var attrs = ReadAttributes(bytes, offset + 16 + attrStart, attrSize, attrCount, strings);
+
+                if (elemName == "manifest")
+                {
+                    if (attrs.TryGetValue("package", out string? pkg))
+                    {
+                        meta.PackageName = pkg;
+                    }
+                    if (attrs.TryGetValue("versionName", out string? vName))
+                    {
+                        meta.VersionName = vName;
+                    }
+                    if (attrs.TryGetValue("versionCode", out string? vCode) && int.TryParse(vCode, out int vc))
+                    {
+                        meta.VersionCode = vc;
+                    }
+                }
+                else if (elemName == "activity" || elemName == "activity-alias")
+                {
+                    bool isEnabled = !attrs.TryGetValue("enabled", out string? enVal) ||
+                                     !enVal.Equals("false", StringComparison.OrdinalIgnoreCase);
+
+                    if (attrs.TryGetValue("name", out string? rawName) && !string.IsNullOrEmpty(rawName) && isEnabled)
+                    {
+                        currentActivity = NormalizeClassName(meta.PackageName, rawName);
+                        if (!meta.AllActivities.Contains(currentActivity))
+                        {
+                            meta.AllActivities.Add(currentActivity);
+                        }
+                    }
+                    else
+                    {
+                        currentActivity = null;
+                    }
+                }
+                else if (elemName == "intent-filter" && currentActivity != null)
+                {
+                    inIntentFilter = true;
+                    hasMainAction = false;
+                    hasLauncherCategory = false;
+                    hasViewAction = false;
+                    filterMimeTypes.Clear();
+                    filterSchemes.Clear();
+                }
+                else if (inIntentFilter && elemName == "action")
+                {
+                    if (attrs.TryGetValue("name", out string? actionName))
+                    {
+                        if (actionName == "android.intent.action.MAIN")
+                        {
+                            hasMainAction = true;
+                        }
+                        else if (actionName == "android.intent.action.VIEW")
+                        {
+                            hasViewAction = true;
+                        }
+                    }
+                }
+                else if (inIntentFilter && elemName == "category")
+                {
+                    if (attrs.TryGetValue("name", out string? catName) &&
+                        catName == "android.intent.action.LAUNCHER" ||
+                        attrs.TryGetValue("name", out catName) &&
+                        catName == "android.intent.category.LAUNCHER")
+                    {
+                        hasLauncherCategory = true;
+                    }
+                }
+                else if (inIntentFilter && elemName == "data")
+                {
+                    if (attrs.TryGetValue("mimeType", out string? mime) && !string.IsNullOrWhiteSpace(mime))
+                    {
+                        filterMimeTypes.Add(mime);
+                    }
+                    if (attrs.TryGetValue("scheme", out string? scheme) && !string.IsNullOrWhiteSpace(scheme))
+                    {
+                        filterSchemes.Add(scheme);
+                    }
+                }
+            }
+            else if (chunkType == RES_XML_END_ELEMENT_TYPE && offset + 24 <= fileSize)
+            {
+                int nameIdx = BitConverter.ToInt32(bytes, offset + 20);
+                string elemName = GetString(strings, nameIdx);
+
+                if (elemName == "intent-filter" && inIntentFilter && currentActivity != null)
+                {
+                    if (hasMainAction && hasLauncherCategory && string.IsNullOrEmpty(meta.LauncherActivity))
+                    {
+                        meta.LauncherActivity = currentActivity;
+                    }
+                    if (hasViewAction)
+                    {
+                        firstViewActivity ??= currentActivity;
+                        foreach (string m in filterMimeTypes)
+                        {
+                            if (!meta.MimeTypes.Contains(m))
+                            {
+                                meta.MimeTypes.Add(m);
+                            }
+                        }
+                        foreach (string s in filterSchemes)
+                        {
+                            if (!meta.Schemes.Contains(s))
+                            {
+                                meta.Schemes.Add(s);
+                            }
+                        }
+                    }
+                    inIntentFilter = false;
+                }
+                else if (elemName == "activity" || elemName == "activity-alias")
+                {
+                    currentActivity = null;
+                }
+            }
+
+            offset += chunkSize;
+        }
+
+        if (string.IsNullOrEmpty(meta.LauncherActivity))
+        {
+            meta.LauncherActivity = firstViewActivity ?? meta.AllActivities.FirstOrDefault() ?? $"{meta.PackageName}.MainActivity";
+        }
+
+        return meta;
+    }
+
+    private static string NormalizeClassName(string packageName, string className)
+    {
+        if (className.StartsWith('.'))
+        {
+            return packageName + className;
+        }
+        if (!className.Contains('.'))
+        {
+            return $"{packageName}.{className}";
+        }
+        return className;
+    }
+
+    private static Dictionary<string, string> ReadAttributes(
+        byte[] bytes,
+        int attrOffset,
+        int attrSize,
+        int attrCount,
+        string[] strings)
+    {
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (attrSize <= 0) attrSize = 20;
+
+        for (int i = 0; i < attrCount; i++)
+        {
+            int pos = attrOffset + i * attrSize;
+            if (pos + 20 > bytes.Length) break;
+
+            int nameIdx = BitConverter.ToInt32(bytes, pos + 4);
+            int rawValueIdx = BitConverter.ToInt32(bytes, pos + 8);
+            byte dataType = bytes[pos + 15];
+            int dataValue = BitConverter.ToInt32(bytes, pos + 16);
+
+            string name = GetString(strings, nameIdx);
+            if (string.IsNullOrEmpty(name)) continue;
+
+            string val;
+            if (rawValueIdx >= 0 && rawValueIdx < strings.Length)
+            {
+                val = strings[rawValueIdx];
+            }
+            else if (dataType == 0x03 && dataValue >= 0 && dataValue < strings.Length) // TYPE_STRING
+            {
+                val = strings[dataValue];
+            }
+            else if (dataType == 0x12) // TYPE_INT_BOOLEAN
+            {
+                val = dataValue != 0 ? "true" : "false";
+            }
+            else
+            {
+                val = dataValue.ToString();
+            }
+
+            dict[name] = val;
+        }
+
+        return dict;
+    }
+
+    private static string[] ReadStringPool(byte[] bytes, int chunkOffset, int headerSize, int chunkSize)
+    {
+        int stringCount = BitConverter.ToInt32(bytes, chunkOffset + 8);
+        uint flags = BitConverter.ToUInt32(bytes, chunkOffset + 16);
+        int stringsStart = BitConverter.ToInt32(bytes, chunkOffset + 20);
+        bool isUtf8 = (flags & UTF8_FLAG) != 0;
+
+        if (stringCount <= 0) return Array.Empty<string>();
+
+        var result = new string[stringCount];
+        int offsetsBase = chunkOffset + headerSize;
+        int dataBase = chunkOffset + stringsStart;
+
+        for (int i = 0; i < stringCount; i++)
+        {
+            int offsetPos = offsetsBase + i * 4;
+            if (offsetPos + 4 > chunkOffset + chunkSize) break;
+
+            int strOffset = BitConverter.ToInt32(bytes, offsetPos);
+            int pos = dataBase + strOffset;
+            if (pos < 0 || pos >= chunkOffset + chunkSize)
+            {
+                result[i] = "";
+                continue;
+            }
+
+            if (isUtf8)
+            {
+                // Skip UTF-16 char length (1 or 2 bytes)
+                if ((bytes[pos] & 0x80) != 0) pos += 2;
+                else pos += 1;
+
+                // Read UTF-8 byte length (1 or 2 bytes)
+                int byteLen;
+                if ((bytes[pos] & 0x80) != 0)
+                {
+                    byteLen = ((bytes[pos] & 0x7F) << 8) | bytes[pos + 1];
+                    pos += 2;
+                }
+                else
+                {
+                    byteLen = bytes[pos];
+                    pos += 1;
+                }
+
+                if (pos + byteLen <= bytes.Length)
+                {
+                    result[i] = Encoding.UTF8.GetString(bytes, pos, byteLen);
+                }
+                else
+                {
+                    result[i] = "";
+                }
+            }
+            else
+            {
+                // UTF-16LE length (2 or 4 bytes)
+                int charLen = BitConverter.ToUInt16(bytes, pos);
+                if ((charLen & 0x8000) != 0)
+                {
+                    charLen = ((charLen & 0x7FFF) << 16) | BitConverter.ToUInt16(bytes, pos + 2);
+                    pos += 4;
+                }
+                else
+                {
+                    pos += 2;
+                }
+
+                int byteLen = charLen * 2;
+                if (pos + byteLen <= bytes.Length)
+                {
+                    result[i] = Encoding.Unicode.GetString(bytes, pos, byteLen);
+                }
+                else
+                {
+                    result[i] = "";
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static string GetString(string[] pool, int index)
+    {
+        return index >= 0 && index < pool.Length ? pool[index] : "";
+    }
+}

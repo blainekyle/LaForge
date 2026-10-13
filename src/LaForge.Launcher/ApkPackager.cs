@@ -1,0 +1,148 @@
+using System.Text.Json;
+
+namespace LaForge.Launcher;
+
+public static class ApkPackager
+{
+    public static string ForgeBundle(string apkPath, string outputRootDir)
+    {
+        ApkMetadata meta = ApkManifestParser.ParseApk(apkPath);
+        string appSlug = DeriveAppSlug(meta.PackageName);
+        string bundleDir = Path.Combine(Path.GetFullPath(outputRootDir), meta.PackageName);
+
+        Directory.CreateDirectory(bundleDir);
+        Directory.CreateDirectory(Path.Combine(bundleDir, "runtime"));
+        Directory.CreateDirectory(Path.Combine(bundleDir, "bridge"));
+
+        // 1. Copy APK to payload.apk
+        string payloadDest = Path.Combine(bundleDir, "payload.apk");
+        File.Copy(meta.ApkPath, payloadDest, overwrite: true);
+
+        // 2. Copy launcher executable & runtime host files from BaseDirectory
+        string baseDir = AppContext.BaseDirectory;
+        foreach (string file in Directory.GetFiles(baseDir, "launcher*"))
+        {
+            string ext = Path.GetExtension(file).ToLowerInvariant();
+            if (ext is ".exe" or ".dll" or ".json")
+            {
+                string destFile = Path.Combine(bundleDir, Path.GetFileName(file));
+                if (!Path.GetFullPath(file).Equals(Path.GetFullPath(destFile), StringComparison.OrdinalIgnoreCase))
+                {
+                    File.Copy(file, destFile, overwrite: true);
+                }
+            }
+        }
+
+        // 3. Build bespoke config.json for the ingested APK
+        var config = new LaForgeConfig
+        {
+            App = new AppConfig
+            {
+                Title = $"LaForge - {appSlug} (v{meta.VersionName})",
+                ApkPath = "./payload.apk",
+                PackageName = meta.PackageName,
+                ActivityName = meta.LauncherActivity
+            },
+            Runtime = new RuntimeConfig
+            {
+                EmulatorPath = "emulator",
+                AdbPath = "adb",
+                AvdName = "LaForge_x86_64_API34",
+                Snapshot = "default_boot",
+                GpuMode = "host",
+                Whpx = true,
+                Headless = true,
+                BootTimeoutSec = 60
+            },
+            Display = new DisplayConfig
+            {
+                ScrcpyPath = "bridge/scrcpy.exe",
+                RenderDriver = "direct3d",
+                Window = new WindowConfig
+                {
+                    X = 100,
+                    Y = 100,
+                    Width = 1280,
+                    Height = 720,
+                    Borderless = true,
+                    AlwaysOnTop = false,
+                    Fullscreen = false
+                },
+                Vsync = true,
+                MaxFps = 60,
+                StayAwake = true
+            },
+            Relays = new RelaysConfig
+            {
+                RemoteStagingDir = "/sdcard/Download",
+                Associations = DeriveRelayAssociations(meta)
+            }
+        };
+
+        var jsonOpts = new JsonSerializerOptions { WriteIndented = true };
+        string configJson = JsonSerializer.Serialize(config, jsonOpts);
+        File.WriteAllText(Path.Combine(bundleDir, "config.json"), configJson);
+
+        return bundleDir;
+    }
+
+    private static string DeriveAppSlug(string packageName)
+    {
+        if (string.IsNullOrWhiteSpace(packageName)) return "AndroidApp";
+        string[] parts = packageName.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+        {
+            return string.Join(' ', parts.Skip(1).Select(p => char.ToUpperInvariant(p[0]) + p[1..]));
+        }
+        return packageName;
+    }
+
+    private static Dictionary<string, RelayRule> DeriveRelayAssociations(ApkMetadata meta)
+    {
+        var map = new Dictionary<string, RelayRule>(StringComparer.OrdinalIgnoreCase);
+
+        bool hasImage = meta.MimeTypes.Any(m => m.StartsWith("image/", StringComparison.OrdinalIgnoreCase));
+        bool hasVideo = meta.MimeTypes.Any(m => m.StartsWith("video/", StringComparison.OrdinalIgnoreCase));
+        bool hasAudio = meta.MimeTypes.Any(m => m.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) ||
+                                                m.Equals("application/ogg", StringComparison.OrdinalIgnoreCase));
+        bool hasArchiveOrAny = meta.MimeTypes.Any(m => m.Equals("*/*", StringComparison.OrdinalIgnoreCase) ||
+                                                       m.Contains("zip", StringComparison.OrdinalIgnoreCase) ||
+                                                       m.StartsWith("text/", StringComparison.OrdinalIgnoreCase));
+
+        if (hasImage || meta.PackageName.Contains("gallery", StringComparison.OrdinalIgnoreCase))
+        {
+            map[".png"] = new RelayRule { MimeType = "image/png", Action = "android.intent.action.VIEW" };
+            map[".jpg"] = new RelayRule { MimeType = "image/jpeg", Action = "android.intent.action.VIEW" };
+            map[".jpeg"] = new RelayRule { MimeType = "image/jpeg", Action = "android.intent.action.VIEW" };
+            map[".webp"] = new RelayRule { MimeType = "image/webp", Action = "android.intent.action.VIEW" };
+        }
+
+        if (hasVideo || meta.PackageName.Contains("gallery", StringComparison.OrdinalIgnoreCase))
+        {
+            map[".mp4"] = new RelayRule { MimeType = "video/mp4", Action = "android.intent.action.VIEW" };
+            map[".mkv"] = new RelayRule { MimeType = "video/x-matroska", Action = "android.intent.action.VIEW" };
+        }
+
+        if (hasAudio ||
+            meta.PackageName.Contains("music", StringComparison.OrdinalIgnoreCase) ||
+            meta.PackageName.Contains("voice", StringComparison.OrdinalIgnoreCase) ||
+            meta.PackageName.Contains("recorder", StringComparison.OrdinalIgnoreCase))
+        {
+            map[".mp3"] = new RelayRule { MimeType = "audio/mpeg", Action = "android.intent.action.VIEW" };
+            map[".wav"] = new RelayRule { MimeType = "audio/wav", Action = "android.intent.action.VIEW" };
+            map[".m4a"] = new RelayRule { MimeType = "audio/mp4", Action = "android.intent.action.VIEW" };
+            map[".ogg"] = new RelayRule { MimeType = "audio/ogg", Action = "android.intent.action.VIEW" };
+            map[".flac"] = new RelayRule { MimeType = "audio/flac", Action = "android.intent.action.VIEW" };
+        }
+
+        if (hasArchiveOrAny || meta.PackageName.Contains("filemanager", StringComparison.OrdinalIgnoreCase) || map.Count == 0)
+        {
+            map[".zip"] = new RelayRule { MimeType = "application/zip", Action = "android.intent.action.VIEW" };
+            map[".txt"] = new RelayRule { MimeType = "text/plain", Action = "android.intent.action.VIEW" };
+            map[".pdf"] = new RelayRule { MimeType = "application/pdf", Action = "android.intent.action.VIEW" };
+            map[".ica"] = new RelayRule { MimeType = "application/x-ica", Action = "android.intent.action.VIEW" };
+        }
+
+        return map;
+    }
+}

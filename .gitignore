@@ -5,11 +5,13 @@ out/
 *.pdb
 *.user
 
-# Heavy runtime / VM images & local APK payloads (preserve directory structure via .gitkeep)
+# Heavy runtime / VM images & large APK binaries (preserve directory structure and forged configs)
 runtime/*
 !runtime/.gitkeep
 bridge/*
 !bridge/.gitkeep
+samples/*.apk
+dist/*/payload.apk
 
 # Temporary / OS files
 .DS_Store
