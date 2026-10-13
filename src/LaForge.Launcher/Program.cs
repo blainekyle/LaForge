@@ -313,6 +313,16 @@ public static class Program
                     ShowWindow(consoleWnd, SW_HIDE);
                 }
 
+                // Fast-path: if this app's scrcpy window is already running or backgrounded (SW_HIDE), restore & focus it in 0ms
+                if (string.IsNullOrWhiteSpace(relayFile))
+                {
+                    var existingPolicy = LaForgeAppRegistry.LoadOrCreate(config, configDir);
+                    if (LaForgeAppRegistry.TryRestoreOrFocusAppWindow(existingPolicy))
+                    {
+                        return 0;
+                    }
+                }
+
                 ApplicationConfiguration.Initialize();
                 Application.Run(new LaForgeWindow(config, fullConfigPath, configDir, relayFile));
                 return 0;
@@ -534,10 +544,28 @@ public static class Program
 
     public static void SideloadAndGrantPermissions(string adbExe, string apkPath, string packageName)
     {
-        RunCheckedProcess(adbExe, new[] { "install", "-r", "-g", apkPath });
+        bool alreadyInstalled = false;
+        if (!string.IsNullOrWhiteSpace(packageName))
+        {
+            try
+            {
+                string pmOut = RunProcessCaptureOutput(adbExe, new[] { "shell", "pm", "path", packageName }, 4000).Trim();
+                alreadyInstalled = pmOut.StartsWith("package:", StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                // Ignore
+            }
+        }
+
+        if (!alreadyInstalled)
+        {
+            RunCheckedProcess(adbExe, new[] { "install", "-r", "-g", apkPath });
+        }
+
         try
         {
-            RunProcessCaptureOutput(adbExe, new[] { "shell", "appops", "set", packageName, "MANAGE_EXTERNAL_STORAGE", "allow" }, 5000);
+            RunProcessCaptureOutput(adbExe, new[] { "shell", "appops", "set", packageName, "MANAGE_EXTERNAL_STORAGE", "allow" }, 4000);
         }
         catch
         {

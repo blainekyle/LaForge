@@ -409,14 +409,17 @@ public sealed class LaForgeConsoleWindow : Form
                 else if (tel.IsBackgrounded)
                 {
                     bgCount++;
-                    card.StatusBadge.Text = $"◐ BACKGROUND (PID {tel.AndroidPid})";
+                    string bgDetail = tel.VirtualDisplayId > 0
+                        ? $"Display #{tel.VirtualDisplayId}"
+                        : $"PID {(tel.AndroidPid > 0 ? tel.AndroidPid : tel.ScrcpyProcessId)}";
+                    card.StatusBadge.Text = $"◐ BACKGROUND ({bgDetail})";
                     card.StatusBadge.BackColor = Color.FromArgb(72, 54, 20);
                     card.StatusBadge.ForeColor = Color.FromArgb(255, 200, 95);
-                    card.BtnLaunchFocus.Text = "▶ Resume Display";
+                    card.BtnLaunchFocus.Text = tel.ScrcpyWindowHandle != IntPtr.Zero ? "▶ Restore Window" : "▶ Resume Display";
                     card.BtnBackground.Enabled = false;
                     card.BtnStop.Enabled = true;
 
-                    if (tel.IsPlayingAudio && !app.MuteAudio)
+                    if (tel.IsPlayingAudio && !app.MuteAudio && tel.ScrcpyProcessId <= 0)
                     {
                         anyBackgroundPlayingAudio = true;
                     }
@@ -467,7 +470,7 @@ public sealed class LaForgeConsoleWindow : Form
                 allNotifs.AddRange(tel.Notifications);
             }
 
-            // Maintain headless audio bridge when a backgrounded app is playing audio and no visual scrcpy window is open
+            // Maintain headless audio bridge when a backgrounded app is playing audio and no scrcpy process is running
             if (anyBackgroundPlayingAudio && !anyVisualScrcpyOpen)
             {
                 EnsureHeadlessAudioBridge();
@@ -521,26 +524,11 @@ public sealed class LaForgeConsoleWindow : Form
         var app = _apps.FirstOrDefault(a => a.PackageName.Equals(packageName, StringComparison.OrdinalIgnoreCase));
         if (app == null) return;
 
-        // Check if scrcpy window is already open for this app
-        try
+        // 1. Instant 0ms restore/focus if the app's scrcpy window already exists (visible OR hidden/backgrounded via SW_HIDE)
+        if (LaForgeAppRegistry.TryRestoreOrFocusAppWindow(app))
         {
-            foreach (var p in Process.GetProcessesByName("scrcpy"))
-            {
-                if ((app.LastScrcpyPid > 0 && p.Id == app.LastScrcpyPid) ||
-                    (!string.IsNullOrWhiteSpace(app.AppTitle) && p.MainWindowTitle.Equals(app.AppTitle, StringComparison.OrdinalIgnoreCase)))
-                {
-                    if (p.MainWindowHandle != IntPtr.Zero)
-                    {
-                        ShowWindow(p.MainWindowHandle, SW_RESTORE);
-                        SetForegroundWindow(p.MainWindowHandle);
-                        return;
-                    }
-                }
-            }
-        }
-        catch
-        {
-            // Ignore
+            await RefreshTelemetryAsync();
+            return;
         }
 
         StopHeadlessAudioBridge();
@@ -563,28 +551,8 @@ public sealed class LaForgeConsoleWindow : Form
         var app = _apps.FirstOrDefault(a => a.PackageName.Equals(packageName, StringComparison.OrdinalIgnoreCase));
         if (app == null) return;
 
-        // Enable BackgroundOnClose so closing its scrcpy window keeps the Android process alive
-        app.BackgroundOnClose = true;
-        LaForgeAppRegistry.Save(app);
-
-        try
-        {
-            foreach (var p in Process.GetProcessesByName("scrcpy"))
-            {
-                if ((app.LastScrcpyPid > 0 && p.Id == app.LastScrcpyPid) ||
-                    (!string.IsNullOrWhiteSpace(app.AppTitle) && p.MainWindowTitle.Equals(app.AppTitle, StringComparison.OrdinalIgnoreCase)))
-                {
-                    p.Kill();
-                    p.WaitForExit(1500);
-                }
-            }
-        }
-        catch
-        {
-            // Ignore
-        }
-
-        await Task.Delay(400);
+        // Instant 0ms window hide via SW_HIDE — keeps scrcpy, its virtual display, and audio running in the background
+        LaForgeAppRegistry.BackgroundAppWindow(app);
         await RefreshTelemetryAsync();
     }
 
@@ -595,13 +563,11 @@ public sealed class LaForgeConsoleWindow : Form
 
         try
         {
-            foreach (var p in Process.GetProcessesByName("scrcpy"))
+            var win = LaForgeAppRegistry.FindAppScrcpyWindow(app);
+            if (win != null && win.ProcessId > 0)
             {
-                if ((app.LastScrcpyPid > 0 && p.Id == app.LastScrcpyPid) ||
-                    (!string.IsNullOrWhiteSpace(app.AppTitle) && p.MainWindowTitle.Equals(app.AppTitle, StringComparison.OrdinalIgnoreCase)))
-                {
-                    p.Kill();
-                }
+                using var proc = Process.GetProcessById(win.ProcessId);
+                proc.Kill();
             }
         }
         catch

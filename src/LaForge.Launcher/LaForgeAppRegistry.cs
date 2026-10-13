@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -40,13 +41,21 @@ public sealed class AppLiveTelemetry
     public int AndroidPid { get; set; }
     public int VirtualDisplayId { get; set; } = -1;
     public int ScrcpyProcessId { get; set; }
+    public IntPtr ScrcpyWindowHandle { get; set; }
+    public bool IsScrcpyWindowVisible { get; set; }
     public bool IsPlayingAudio { get; set; }
     public bool IsRecordingAudio { get; set; }
     public List<AppNotificationItem> Notifications { get; set; } = new();
 
-    public bool IsRunningOnDisplay => VirtualDisplayId > 0 || ScrcpyProcessId > 0;
-    public bool IsBackgrounded => !IsRunningOnDisplay && AndroidPid > 0;
-    public bool IsStopped => !IsRunningOnDisplay && AndroidPid <= 0;
+    public bool IsRunningOnDisplay =>
+        (ScrcpyProcessId > 0 && IsScrcpyWindowVisible) ||
+        (ScrcpyProcessId <= 0 && VirtualDisplayId > 0);
+
+    public bool IsBackgrounded =>
+        (ScrcpyProcessId > 0 && !IsScrcpyWindowVisible) ||
+        (!IsRunningOnDisplay && AndroidPid > 0);
+
+    public bool IsStopped => !IsRunningOnDisplay && !IsBackgrounded;
 }
 
 /// <summary>
@@ -56,6 +65,129 @@ public sealed class AppLiveTelemetry
 /// </summary>
 public static class LaForgeAppRegistry
 {
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    private const int SW_HIDE = 0;
+    private const int SW_SHOW = 5;
+    private const int SW_RESTORE = 9;
+
+    public sealed record ScrcpyWindowInfo(IntPtr Hwnd, int ProcessId, string Title, bool IsVisible);
+
+    public static List<ScrcpyWindowInfo> FindAllScrcpyWindows()
+    {
+        var list = new List<ScrcpyWindowInfo>();
+        var scrcpyPids = new HashSet<int>();
+        try
+        {
+            foreach (var p in Process.GetProcessesByName("scrcpy"))
+            {
+                scrcpyPids.Add(p.Id);
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+
+        if (scrcpyPids.Count == 0)
+        {
+            return list;
+        }
+
+        EnumWindows((hWnd, _) =>
+        {
+            GetWindowThreadProcessId(hWnd, out uint pid);
+            if (!scrcpyPids.Contains((int)pid))
+            {
+                return true;
+            }
+
+            var clsSb = new StringBuilder(128);
+            GetClassName(hWnd, clsSb, clsSb.Capacity);
+            string cls = clsSb.ToString();
+
+            var titleSb = new StringBuilder(256);
+            GetWindowText(hWnd, titleSb, titleSb.Capacity);
+            string title = titleSb.ToString();
+
+            if (cls.Equals("SDL_app", StringComparison.OrdinalIgnoreCase) || !string.IsNullOrWhiteSpace(title))
+            {
+                list.Add(new ScrcpyWindowInfo(hWnd, (int)pid, title, IsWindowVisible(hWnd)));
+            }
+            return true;
+        }, IntPtr.Zero);
+
+        return list;
+    }
+
+    public static ScrcpyWindowInfo? FindAppScrcpyWindow(AppPolicyConfig app, IReadOnlyList<ScrcpyWindowInfo>? allWindows = null)
+    {
+        var windows = allWindows ?? FindAllScrcpyWindows();
+        if (app.LastScrcpyPid > 0)
+        {
+            var byPid = windows.FirstOrDefault(w => w.ProcessId == app.LastScrcpyPid);
+            if (byPid != null) return byPid;
+        }
+        if (!string.IsNullOrWhiteSpace(app.AppTitle))
+        {
+            var byTitle = windows.FirstOrDefault(w => w.Title.Equals(app.AppTitle, StringComparison.OrdinalIgnoreCase));
+            if (byTitle != null) return byTitle;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Hides the app's scrcpy SDL3 window in 0ms without killing scrcpy or destroying its Android virtual display.
+    /// </summary>
+    public static bool BackgroundAppWindow(AppPolicyConfig app)
+    {
+        var win = FindAppScrcpyWindow(app);
+        if (win != null && win.Hwnd != IntPtr.Zero)
+        {
+            ShowWindow(win.Hwnd, SW_HIDE);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Restores and focuses an existing visible or hidden (backgrounded) scrcpy window in 0ms.
+    /// Returns true if an existing window was found and restored/focused.
+    /// </summary>
+    public static bool TryRestoreOrFocusAppWindow(AppPolicyConfig app)
+    {
+        var win = FindAppScrcpyWindow(app);
+        if (win != null && win.Hwnd != IntPtr.Zero)
+        {
+            ShowWindow(win.Hwnd, SW_SHOW);
+            ShowWindow(win.Hwnd, SW_RESTORE);
+            SetForegroundWindow(win.Hwnd);
+            return true;
+        }
+        return false;
+    }
+
     public static string GetConfigDirectory()
     {
         string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -367,35 +499,19 @@ public static class LaForgeAppRegistry
             result[app.PackageName] = new AppLiveTelemetry { PackageName = app.PackageName };
         }
 
-        // 1. Inspect local Windows scrcpy processes
+        // 1. Inspect local Windows scrcpy windows (both visible and hidden/backgrounded via SW_HIDE)
         try
         {
-            var scrcpyProcs = Process.GetProcessesByName("scrcpy");
+            var allWindows = FindAllScrcpyWindows();
             foreach (var app in apps)
             {
                 var tel = result[app.PackageName];
-                Process? matched = null;
-                if (app.LastScrcpyPid > 0)
+                var win = FindAppScrcpyWindow(app, allWindows);
+                if (win != null)
                 {
-                    matched = scrcpyProcs.FirstOrDefault(p => p.Id == app.LastScrcpyPid);
-                }
-                if (matched == null && !string.IsNullOrWhiteSpace(app.AppTitle))
-                {
-                    matched = scrcpyProcs.FirstOrDefault(p =>
-                    {
-                        try
-                        {
-                            return p.MainWindowTitle.Equals(app.AppTitle, StringComparison.OrdinalIgnoreCase);
-                        }
-                        catch
-                        {
-                            return false;
-                        }
-                    });
-                }
-                if (matched != null)
-                {
-                    tel.ScrcpyProcessId = matched.Id;
+                    tel.ScrcpyProcessId = win.ProcessId;
+                    tel.ScrcpyWindowHandle = win.Hwnd;
+                    tel.IsScrcpyWindowVisible = win.IsVisible;
                 }
             }
         }

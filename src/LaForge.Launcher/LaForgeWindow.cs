@@ -44,6 +44,12 @@ public sealed class LaForgeWindow : Form
         Font = new Font("Segoe UI", 10F, FontStyle.Regular);
         AllowDrop = true;
 
+        if (config.Display.AutoHideConsole)
+        {
+            Opacity = 0;
+            ShowInTaskbar = false;
+        }
+
         // Load bespoke app.ico if present
         Icon? appIcon = TryLoadAppIcon(configDir, config.App.IconPath);
         if (appIcon != null)
@@ -53,6 +59,17 @@ public sealed class LaForgeWindow : Form
 
         // System Tray NotifyIcon for Single-Window UX
         var trayMenu = new ContextMenuStrip();
+        trayMenu.Items.Add("Restore / Focus App Window", null, (_, _) =>
+        {
+            var policy = LaForgeAppRegistry.LoadOrCreate(_config, _configDir);
+            LaForgeAppRegistry.TryRestoreOrFocusAppWindow(policy);
+        });
+        trayMenu.Items.Add("Background App Window", null, (_, _) =>
+        {
+            var policy = LaForgeAppRegistry.LoadOrCreate(_config, _configDir);
+            LaForgeAppRegistry.BackgroundAppWindow(policy);
+        });
+        trayMenu.Items.Add(new ToolStripSeparator());
         trayMenu.Items.Add("Open LaForge Central Console", null, OnOpenCentralConsoleClicked);
         trayMenu.Items.Add("Show / Hide App Control Console", null, (_, _) => ToggleConsoleVisibility());
         trayMenu.Items.Add("Open Shared HOST Folder", null, OnOpenHostShareClicked);
@@ -67,7 +84,14 @@ public sealed class LaForgeWindow : Form
             ContextMenuStrip = trayMenu,
             Visible = true
         };
-        _trayIcon.DoubleClick += (_, _) => ToggleConsoleVisibility();
+        _trayIcon.DoubleClick += (_, _) =>
+        {
+            var policy = LaForgeAppRegistry.LoadOrCreate(_config, _configDir);
+            if (!LaForgeAppRegistry.TryRestoreOrFocusAppWindow(policy))
+            {
+                ToggleConsoleVisibility();
+            }
+        };
 
         // Top Header Panel
         var headerPanel = new Panel
@@ -248,12 +272,13 @@ public sealed class LaForgeWindow : Form
             return;
         }
 
-        if (Visible)
+        if (Visible && Opacity > 0.1)
         {
             HideToSystemTray();
         }
         else
         {
+            Opacity = 1;
             ShowInTaskbar = true;
             Show();
             WindowState = FormWindowState.Normal;
@@ -268,6 +293,7 @@ public sealed class LaForgeWindow : Form
             BeginInvoke(HideToSystemTray);
             return;
         }
+        Opacity = 0;
         ShowInTaskbar = false;
         Hide();
     }
@@ -460,6 +486,9 @@ public sealed class LaForgeWindow : Form
             }
             else
             {
+                Opacity = 1;
+                ShowInTaskbar = true;
+                Show();
                 _lblRuntimeStatus.Text = "Android Guest Runtime\nAWAITING VM / DEVICE";
                 _lblRuntimeStatus.ForeColor = Color.FromArgb(255, 166, 87);
 
@@ -533,7 +562,7 @@ public sealed class LaForgeWindow : Form
         if (IsDisposed) return;
         BeginInvoke(() =>
         {
-            if (!Visible)
+            if (!Visible || Opacity < 0.1)
             {
                 // In Single-Window Mode (Control Console hidden in tray), closing the scrcpy app window exits the wrapper cleanly
                 Close();
