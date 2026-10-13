@@ -22,8 +22,11 @@ public sealed class LaForgeWindow : Form
     private readonly Button _btnOpenHost;
     private readonly Button _btnProvision;
     private readonly CheckBox _chkHostMount;
+    private readonly CheckBox _chkAutoHide;
+    private readonly NotifyIcon _trayIcon;
 
     private HostFolderBridge? _hostBridge;
+    private Process? _activeScrcpyProcess;
 
     public LaForgeWindow(LaForgeConfig config, string configPath, string configDir, string? initialRelayFile)
     {
@@ -40,6 +43,30 @@ public sealed class LaForgeWindow : Form
         ForeColor = Color.FromArgb(230, 235, 245);
         Font = new Font("Segoe UI", 10F, FontStyle.Regular);
         AllowDrop = true;
+
+        // Load bespoke app.ico if present
+        Icon? appIcon = TryLoadAppIcon(configDir, config.App.IconPath);
+        if (appIcon != null)
+        {
+            Icon = appIcon;
+        }
+
+        // System Tray NotifyIcon for Single-Window UX
+        var trayMenu = new ContextMenuStrip();
+        trayMenu.Items.Add("Show / Hide Control Console", null, (_, _) => ToggleConsoleVisibility());
+        trayMenu.Items.Add("Open Shared HOST Folder", null, OnOpenHostShareClicked);
+        trayMenu.Items.Add("Test File Association Relay...", null, OnTestRelayClicked);
+        trayMenu.Items.Add(new ToolStripSeparator());
+        trayMenu.Items.Add($"Exit {config.App.Title}", null, (_, _) => ExitEntireApplication());
+
+        _trayIcon = new NotifyIcon
+        {
+            Icon = appIcon ?? SystemIcons.Application,
+            Text = config.App.Title.Length > 63 ? config.App.Title[..63] : config.App.Title,
+            ContextMenuStrip = trayMenu,
+            Visible = true
+        };
+        _trayIcon.DoubleClick += (_, _) => ToggleConsoleVisibility();
 
         // Top Header Panel
         var headerPanel = new Panel
@@ -108,7 +135,7 @@ public sealed class LaForgeWindow : Form
             FlowDirection = FlowDirection.LeftToRight
         };
 
-        _btnBoot = CreateActionButton("Boot Runtime && Attach scrcpy", Color.FromArgb(35, 134, 54));
+        _btnBoot = CreateActionButton("Boot && Attach scrcpy", Color.FromArgb(35, 134, 54));
         _btnBoot.Click += async (_, _) => await RunSessionPipelineAsync(_initialRelayFile);
 
         _btnRelay = CreateActionButton("Test File Relay...", Color.FromArgb(31, 111, 235));
@@ -117,26 +144,39 @@ public sealed class LaForgeWindow : Form
         _btnOpenHost = CreateActionButton("Open HOST Share", Color.FromArgb(45, 90, 140));
         _btnOpenHost.Click += OnOpenHostShareClicked;
 
-        _btnProvision = CreateActionButton("Provision Android SDK Runtime", Color.FromArgb(110, 64, 201));
+        _btnProvision = CreateActionButton("Provision SDK Runtime", Color.FromArgb(110, 64, 201));
         _btnProvision.Click += OnProvisionRuntimeClicked;
 
         _chkHostMount = new CheckBox
         {
-            Text = $"Mount {_config.Storage.GuestMountPath} (Host Bridge)",
+            Text = $"Mount {_config.Storage.GuestMountPath}",
             Checked = _config.Storage.EnableHostMount,
             AutoSize = true,
             ForeColor = Color.FromArgb(126, 231, 135),
             Font = new Font("Segoe UI Semibold", 9.5F, FontStyle.Bold),
-            Margin = new Padding(8, 8, 12, 0),
+            Margin = new Padding(6, 8, 10, 0),
             Cursor = Cursors.Hand
         };
         _chkHostMount.CheckedChanged += OnHostMountToggleChanged;
+
+        _chkAutoHide = new CheckBox
+        {
+            Text = "Single-Window Mode (Tray)",
+            Checked = _config.Display.AutoHideConsole,
+            AutoSize = true,
+            ForeColor = Color.FromArgb(88, 166, 255),
+            Font = new Font("Segoe UI Semibold", 9.5F, FontStyle.Bold),
+            Margin = new Padding(6, 8, 6, 0),
+            Cursor = Cursors.Hand
+        };
+        _chkAutoHide.CheckedChanged += OnAutoHideToggleChanged;
 
         bottomPanel.Controls.Add(_btnBoot);
         bottomPanel.Controls.Add(_btnRelay);
         bottomPanel.Controls.Add(_btnOpenHost);
         bottomPanel.Controls.Add(_btnProvision);
         bottomPanel.Controls.Add(_chkHostMount);
+        bottomPanel.Controls.Add(_chkAutoHide);
 
         // Center Live Console Log
         _logBox = new RichTextBox
@@ -170,8 +210,81 @@ public sealed class LaForgeWindow : Form
             }
         };
 
-        FormClosed += (_, _) => _hostBridge?.Dispose();
+        FormClosed += (_, _) =>
+        {
+            _trayIcon.Visible = false;
+            _trayIcon.Dispose();
+            _hostBridge?.Dispose();
+        };
+
         Shown += async (_, _) => await RunSessionPipelineAsync(_initialRelayFile);
+    }
+
+    private static Icon? TryLoadAppIcon(string configDir, string configuredIconPath)
+    {
+        try
+        {
+            string candidate = Path.IsPathRooted(configuredIconPath)
+                ? configuredIconPath
+                : Path.GetFullPath(Path.Combine(configDir, configuredIconPath));
+            if (File.Exists(candidate))
+            {
+                return new Icon(candidate);
+            }
+        }
+        catch
+        {
+            // Fallback to default icon
+        }
+        return null;
+    }
+
+    private void ToggleConsoleVisibility()
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(ToggleConsoleVisibility);
+            return;
+        }
+
+        if (Visible)
+        {
+            HideToSystemTray();
+        }
+        else
+        {
+            ShowInTaskbar = true;
+            Show();
+            WindowState = FormWindowState.Normal;
+            Activate();
+        }
+    }
+
+    private void HideToSystemTray()
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(HideToSystemTray);
+            return;
+        }
+        ShowInTaskbar = false;
+        Hide();
+    }
+
+    private void ExitEntireApplication()
+    {
+        try
+        {
+            if (_activeScrcpyProcess != null && !_activeScrcpyProcess.HasExited)
+            {
+                _activeScrcpyProcess.Kill();
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+        Close();
     }
 
     private static Label CreateStatusCard(string title, string status)
@@ -201,13 +314,14 @@ public sealed class LaForgeWindow : Form
             ForeColor = Color.White,
             Font = new Font("Segoe UI Semibold", 9.5F, FontStyle.Bold),
             Padding = new Padding(10, 4, 10, 4),
-            Margin = new Padding(0, 0, 10, 0),
+            Margin = new Padding(0, 0, 8, 0),
             Cursor = Cursors.Hand
         };
     }
 
     private void AppendLog(string message, Color? color = null)
     {
+        if (IsDisposed) return;
         if (InvokeRequired)
         {
             BeginInvoke(() => AppendLog(message, color));
@@ -304,15 +418,25 @@ public sealed class LaForgeWindow : Form
                 string startResult = await Task.Run(() => Program.LaunchApkWithRetry(adbExe, _config.App, 15));
                 AppendLog($"Target APK launched: {startResult}");
 
-                if (scrcpyReady)
-                {
-                    AppendLog("Attaching scrcpy SDL3/Direct3D display bridge...");
-                    Program.EnsureSingleScrcpyInstance(scrcpyExe, scrcpyArgs);
-                }
-
                 if (!string.IsNullOrWhiteSpace(relayFile))
                 {
                     await ExecuteRelayFileAsync(relayFile);
+                }
+
+                if (scrcpyReady)
+                {
+                    AppendLog("Attaching scrcpy SDL3/Direct3D display bridge...");
+                    string scrcpyIconPath = Path.Combine(_configDir, "bridge", "scrcpy.png");
+                    _activeScrcpyProcess = Program.EnsureSingleScrcpyInstance(scrcpyExe, scrcpyArgs, scrcpyIconPath);
+                    _activeScrcpyProcess.EnableRaisingEvents = true;
+                    _activeScrcpyProcess.Exited += OnScrcpyProcessExited;
+
+                    if (_config.Display.AutoHideConsole)
+                    {
+                        AppendLog("Single-Window Mode active: hiding Control Console to System Tray (double-click tray icon to restore).", Color.FromArgb(88, 166, 255));
+                        await Task.Delay(350);
+                        HideToSystemTray();
+                    }
                 }
             }
             else
@@ -324,8 +448,8 @@ public sealed class LaForgeWindow : Form
                 AppendLog("Notice: Display Bridge (scrcpy.exe + SDL3.dll) and ADB (adb.exe) are wired and ready,", Color.FromArgb(255, 166, 87));
                 AppendLog("but no Android guest VM or ADB device is currently running on this host.", Color.FromArgb(255, 166, 87));
                 AppendLog("To run the APK live:", Color.FromArgb(230, 235, 245));
-                AppendLog("  1. Click 'Provision Android SDK Runtime' below to download the Android x86_64 emulator image, OR", Color.FromArgb(230, 235, 245));
-                AppendLog("  2. Connect any Android device/emulator via ADB and click 'Boot Runtime & Attach scrcpy'.", Color.FromArgb(230, 235, 245));
+                AppendLog("  1. Click 'Provision SDK Runtime' below to download the Android x86_64 emulator image, OR", Color.FromArgb(230, 235, 245));
+                AppendLog("  2. Connect any Android device/emulator via ADB and click 'Boot & Attach scrcpy'.", Color.FromArgb(230, 235, 245));
 
                 if (!string.IsNullOrWhiteSpace(relayFile) && File.Exists(relayFile))
                 {
@@ -339,8 +463,34 @@ public sealed class LaForgeWindow : Form
         }
         finally
         {
-            _btnBoot.Enabled = true;
+            if (!IsDisposed)
+            {
+                _btnBoot.Enabled = true;
+            }
         }
+    }
+
+    private void OnScrcpyProcessExited(object? sender, EventArgs e)
+    {
+        if (IsDisposed) return;
+        BeginInvoke(() =>
+        {
+            if (!Visible)
+            {
+                // In Single-Window Mode (Control Console hidden in tray), closing the scrcpy app window exits the wrapper cleanly
+                Close();
+            }
+            else
+            {
+                AppendLog("[DisplayBridge] scrcpy display window closed.", Color.FromArgb(255, 166, 87));
+            }
+        });
+    }
+
+    private void SaveConfigToFile()
+    {
+        var jsonOpts = new JsonSerializerOptions { WriteIndented = true };
+        File.WriteAllText(_configPath, JsonSerializer.Serialize(_config, jsonOpts));
     }
 
     private async void OnHostMountToggleChanged(object? sender, EventArgs e)
@@ -350,8 +500,7 @@ public sealed class LaForgeWindow : Form
 
         try
         {
-            var jsonOpts = new JsonSerializerOptions { WriteIndented = true };
-            File.WriteAllText(_configPath, JsonSerializer.Serialize(_config, jsonOpts));
+            SaveConfigToFile();
             AppendLog($"Updated config.json: storage.enable_host_mount = {_config.Storage.EnableHostMount}", Color.FromArgb(88, 166, 255));
 
             string adbExe = Program.ResolveToolPath(_configDir, _config.Runtime.AdbPath, "adb.exe");
@@ -372,6 +521,21 @@ public sealed class LaForgeWindow : Form
         catch (Exception ex)
         {
             AppendLog($"[HostBridge Error] {ex.Message}", Color.FromArgb(255, 123, 114));
+        }
+    }
+
+    private void OnAutoHideToggleChanged(object? sender, EventArgs e)
+    {
+        _config.Display.AutoHideConsole = _chkAutoHide.Checked;
+        _chkAutoHide.ForeColor = _chkAutoHide.Checked ? Color.FromArgb(88, 166, 255) : Color.FromArgb(170, 180, 195);
+        try
+        {
+            SaveConfigToFile();
+            AppendLog($"Updated config.json: display.auto_hide_console = {_config.Display.AutoHideConsole}", Color.FromArgb(88, 166, 255));
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"[Config Error] {ex.Message}", Color.FromArgb(255, 123, 114));
         }
     }
 

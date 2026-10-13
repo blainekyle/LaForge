@@ -8,6 +8,7 @@ public static class ApkPackager
     {
         ApkMetadata meta = ApkManifestParser.ParseApk(apkPath);
         string appSlug = DeriveAppSlug(meta.PackageName);
+        string bespokeExeName = DeriveExecutableName(appSlug);
         string bundleDir = Path.Combine(Path.GetFullPath(outputRootDir), meta.PackageName);
         string bundleRuntimeDir = Path.Combine(bundleDir, "runtime");
         string bundleBridgeDir = Path.Combine(bundleDir, "bridge");
@@ -20,7 +21,7 @@ public static class ApkPackager
         string payloadDest = Path.Combine(bundleDir, "payload.apk");
         File.Copy(meta.ApkPath, payloadDest, overwrite: true);
 
-        // 2. Copy launcher executable & runtime host files from BaseDirectory
+        // 2. Copy launcher executable & create bespoke <AppName>.exe binary
         string baseDir = AppContext.BaseDirectory;
         foreach (string file in Directory.GetFiles(baseDir, "launcher*"))
         {
@@ -33,6 +34,14 @@ public static class ApkPackager
                     File.Copy(file, destFile, overwrite: true);
                 }
             }
+        }
+
+        string launcherExePath = Path.Combine(bundleDir, "launcher.exe");
+        string bespokeExePath = Path.Combine(bundleDir, bespokeExeName);
+        if (File.Exists(launcherExePath) &&
+            !launcherExePath.Equals(bespokeExePath, StringComparison.OrdinalIgnoreCase))
+        {
+            File.Copy(launcherExePath, bespokeExePath, overwrite: true);
         }
 
         // 3. Copy embedded scrcpy + SDL + ADB bridge binaries into bundle/bridge/
@@ -55,12 +64,17 @@ public static class ApkPackager
             }
         }
 
-        // 4. Build bespoke config.json for the ingested APK
+        // 4. Generate bespoke app.ico and bridge/scrcpy.png icons
+        AppIconGenerator.GenerateBundleIcons(meta.PackageName, appSlug, bundleDir);
+
+        // 5. Build bespoke config.json for the ingested APK
         var config = new LaForgeConfig
         {
             App = new AppConfig
             {
                 Title = $"LaForge - {appSlug} (v{meta.VersionName})",
+                ExecutableName = bespokeExeName,
+                IconPath = "./app.ico",
                 ApkPath = "./payload.apk",
                 PackageName = meta.PackageName,
                 ActivityName = meta.LauncherActivity
@@ -92,7 +106,8 @@ public static class ApkPackager
                 },
                 Vsync = true,
                 MaxFps = 60,
-                StayAwake = true
+                StayAwake = true,
+                AutoHideConsole = true
             },
             Storage = new StorageConfig
             {
@@ -112,10 +127,16 @@ public static class ApkPackager
         string configJson = JsonSerializer.Serialize(config, jsonOpts);
         File.WriteAllText(Path.Combine(bundleDir, "config.json"), configJson);
 
-        // 5. Ensure dedicated %LOCALAPPDATA%\LaForge\HOST directory exists and drop HOST.lnk next to launcher.exe
+        // 6. Ensure dedicated %LOCALAPPDATA%\LaForge\HOST directory exists and drop HOST.lnk next to launcher.exe
         HostFolderBridge.EnsureHostFolderAndShortcut(config.Storage, bundleDir);
 
         return bundleDir;
+    }
+
+    public static string DeriveExecutableName(string appSlug)
+    {
+        string clean = new string(appSlug.Where(char.IsLetterOrDigit).ToArray());
+        return string.IsNullOrWhiteSpace(clean) ? "LaForgeApp.exe" : $"{clean}.exe";
     }
 
     private static string DeriveAppSlug(string packageName)

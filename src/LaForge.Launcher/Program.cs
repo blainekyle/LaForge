@@ -29,6 +29,12 @@ public sealed class AppConfig
     [JsonPropertyName("title")]
     public string Title { get; set; } = "LaForge Standalone App";
 
+    [JsonPropertyName("executable_name")]
+    public string ExecutableName { get; set; } = "launcher.exe";
+
+    [JsonPropertyName("icon_path")]
+    public string IconPath { get; set; } = "./app.ico";
+
     [JsonPropertyName("apk_path")]
     public string ApkPath { get; set; } = "./payload.apk";
 
@@ -85,6 +91,9 @@ public sealed class DisplayConfig
 
     [JsonPropertyName("stay_awake")]
     public bool StayAwake { get; set; } = true;
+
+    [JsonPropertyName("auto_hide_console")]
+    public bool AutoHideConsole { get; set; } = true;
 }
 
 public sealed class WindowConfig
@@ -330,7 +339,8 @@ public static class Program
                 Console.WriteLine($"  Command: {config.Display.ScrcpyPath} {string.Join(' ', scrcpyArgsDisplay)}");
                 if (!dryRun)
                 {
-                    EnsureSingleScrcpyInstance(scrcpyExe, scrcpyArgsExec);
+                    string scrcpyIconPath = Path.Combine(configDir, "bridge", "scrcpy.png");
+                    EnsureSingleScrcpyInstance(scrcpyExe, scrcpyArgsExec, scrcpyIconPath);
                 }
 
                 // Step 3: Sideload payload.apk (if present) and execute target APK via 'adb shell am start'
@@ -548,7 +558,7 @@ public static class Program
         return string.IsNullOrWhiteSpace(lastOut) ? "Completed" : lastOut.Trim();
     }
 
-    public static void EnsureSingleScrcpyInstance(string scrcpyExe, IEnumerable<string> scrcpyArgs)
+    public static Process EnsureSingleScrcpyInstance(string scrcpyExe, IEnumerable<string> scrcpyArgs, string? iconPath = null)
     {
         try
         {
@@ -570,7 +580,13 @@ public static class Program
             // Ignore
         }
 
-        StartBackgroundProcess(scrcpyExe, scrcpyArgs, hidden: false);
+        var envVars = new Dictionary<string, string>();
+        if (!string.IsNullOrWhiteSpace(iconPath) && File.Exists(iconPath))
+        {
+            envVars["SCRCPY_ICON_PATH"] = Path.GetFullPath(iconPath);
+        }
+
+        return StartBackgroundProcess(scrcpyExe, scrcpyArgs, hidden: false, envVars);
     }
 
     public static void ValidateWindowBoundaries(WindowConfig win)
@@ -698,7 +714,11 @@ public static class Program
         return string.Join(' ', args.Select(a => a.Contains(' ') || a.Contains('\\') || a.Contains('/') && !a.StartsWith('-') ? $"\"{a}\"" : a));
     }
 
-    public static Process StartBackgroundProcess(string fileName, IEnumerable<string> args, bool hidden)
+    public static Process StartBackgroundProcess(
+        string fileName,
+        IEnumerable<string> args,
+        bool hidden,
+        IDictionary<string, string>? environmentVariables = null)
     {
         var psi = new ProcessStartInfo
         {
@@ -710,6 +730,13 @@ public static class Program
         foreach (string a in args)
         {
             psi.ArgumentList.Add(a);
+        }
+        if (environmentVariables != null)
+        {
+            foreach (var kv in environmentVariables)
+            {
+                psi.Environment[kv.Key] = kv.Value;
+            }
         }
         return Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start process: {fileName}");
     }

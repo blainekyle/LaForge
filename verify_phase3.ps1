@@ -54,31 +54,35 @@ Set-Content -LiteralPath $testWav -Value "RIFF_WAVE_STUB"
 
 $testMatrix = @(
     @{
-        ApkFile    = "org.fossify.filemanager_13.apk"
-        Package    = "org.fossify.filemanager"
-        Activity   = "org.fossify.filemanager.activities.SplashActivity.Green"
-        RelayFile  = $testTxt
+        ApkFile      = "org.fossify.filemanager_13.apk"
+        Package      = "org.fossify.filemanager"
+        BespokeExe   = "FossifyFilemanager.exe"
+        Activity     = "org.fossify.filemanager.activities.SplashActivity.Green"
+        RelayFile    = $testTxt
         ExpectedMime = "text/plain"
     },
     @{
-        ApkFile    = "org.fossify.gallery_28.apk"
-        Package    = "org.fossify.gallery"
-        Activity   = "org.fossify.gallery.activities.SplashActivity.Green"
-        RelayFile  = $testPng
+        ApkFile      = "org.fossify.gallery_28.apk"
+        Package      = "org.fossify.gallery"
+        BespokeExe   = "FossifyGallery.exe"
+        Activity     = "org.fossify.gallery.activities.SplashActivity.Green"
+        RelayFile    = $testPng
         ExpectedMime = "image/png"
     },
     @{
-        ApkFile    = "org.fossify.musicplayer_14.apk"
-        Package    = "org.fossify.musicplayer"
-        Activity   = "org.fossify.musicplayer.activities.SplashActivity.Green"
-        RelayFile  = $testMp3
+        ApkFile      = "org.fossify.musicplayer_14.apk"
+        Package      = "org.fossify.musicplayer"
+        BespokeExe   = "FossifyMusicplayer.exe"
+        Activity     = "org.fossify.musicplayer.activities.SplashActivity.Green"
+        RelayFile    = $testMp3
         ExpectedMime = "audio/mpeg"
     },
     @{
-        ApkFile    = "org.fossify.voicerecorder_18.apk"
-        Package    = "org.fossify.voicerecorder"
-        Activity   = "org.fossify.voicerecorder.activities.SplashActivity.Green"
-        RelayFile  = $testWav
+        ApkFile      = "org.fossify.voicerecorder_18.apk"
+        Package      = "org.fossify.voicerecorder"
+        BespokeExe   = "FossifyVoicerecorder.exe"
+        Activity     = "org.fossify.voicerecorder.activities.SplashActivity.Green"
+        RelayFile    = $testWav
         ExpectedMime = "audio/wav"
     }
 )
@@ -94,6 +98,8 @@ foreach ($item in $testMatrix) {
 
     $bundleDir     = Join-Path $distDir $pkg
     $bundleExe     = Join-Path $bundleDir "launcher.exe"
+    $bespokeExe    = Join-Path $bundleDir $item.BespokeExe
+    $bundleIco     = Join-Path $bundleDir "app.ico"
     $bundleCfg     = Join-Path $bundleDir "config.json"
     $bundlePayload = Join-Path $bundleDir "payload.apk"
     $bundleLnk     = Join-Path $bundleDir "HOST.lnk"
@@ -102,14 +108,16 @@ foreach ($item in $testMatrix) {
     $hostShareDir  = Join-Path $env:LOCALAPPDATA "LaForge\HOST"
 
     Assert-Condition (Test-Path -LiteralPath $bundleExe) "$pkg : Bundle contains standalone launcher.exe"
+    Assert-Condition (Test-Path -LiteralPath $bespokeExe) "$pkg : Bundle contains bespoke $($item.BespokeExe)"
+    Assert-Condition (Test-Path -LiteralPath $bundleIco) "$pkg : Bundle contains generated app.ico icon"
     Assert-Condition (Test-Path -LiteralPath $bundleCfg) "$pkg : Bundle contains bespoke config.json"
     Assert-Condition (Test-Path -LiteralPath $bundlePayload) "$pkg : Bundle contains sideloaded payload.apk"
     Assert-Condition (Test-Path -LiteralPath $bundleLnk) "$pkg : Bundle contains adjacent HOST.lnk shortcut to %LOCALAPPDATA%\LaForge\HOST"
     Assert-Condition (Test-Path -LiteralPath $hostShareDir) "$pkg : Dedicated %LOCALAPPDATA%\LaForge\HOST folder exists"
     Assert-Condition ((Test-Path -LiteralPath $bundleRuntime) -and (Test-Path -LiteralPath $bundleBridge)) "$pkg : Bundle contains runtime/ and bridge/ directories"
 
-    # 2. Execute the forged bundle's launcher.exe with its domain-specific relay file
-    $runOut = (& $bundleExe --dry-run --config $bundleCfg $item.RelayFile 2>&1 | Out-String)
+    # 2. Execute the forged bundle's bespoke EXE with its domain-specific relay file
+    $runOut = (& $bespokeExe --dry-run --config $bundleCfg $item.RelayFile 2>&1 | Out-String)
     Write-Host $runOut.Trim()
 
     Assert-Condition ($LASTEXITCODE -eq 0) "$pkg : Bundle launcher.exe exited with 0"

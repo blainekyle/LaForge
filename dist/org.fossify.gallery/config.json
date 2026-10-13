@@ -1,6 +1,8 @@
 {
   "app": {
     "title": "LaForge - Fossify Gallery (v1.13.1)",
+    "executable_name": "FossifyGallery.exe",
+    "icon_path": "./app.ico",
     "apk_path": "./payload.apk",
     "package_name": "org.fossify.gallery",
     "activity_name": "org.fossify.gallery.activities.SplashActivity.Green"
@@ -29,7 +31,8 @@
     },
     "vsync": true,
     "max_fps": 60,
-    "stay_awake": true
+    "stay_awake": true,
+    "auto_hide_console": true
   },
   "storage": {
     "enable_host_mount": true,

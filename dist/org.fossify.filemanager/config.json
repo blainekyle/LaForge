@@ -1,6 +1,8 @@
 {
   "app": {
     "title": "LaForge - Fossify Filemanager (v1.6.1)",
+    "executable_name": "FossifyFilemanager.exe",
+    "icon_path": "./app.ico",
     "apk_path": "./payload.apk",
     "package_name": "org.fossify.filemanager",
     "activity_name": "org.fossify.filemanager.activities.SplashActivity.Green"
@@ -29,7 +31,8 @@
     },
     "vsync": true,
     "max_fps": 60,
-    "stay_awake": true
+    "stay_awake": true,
+    "auto_hide_console": true
   },
   "storage": {
     "enable_host_mount": true,
