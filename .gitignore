@@ -1,0 +1,18 @@
+# Build artifacts
+bin/
+obj/
+out/
+*.pdb
+*.user
+
+# Heavy runtime / VM images & local APK payloads (preserve directory structure via .gitkeep)
+runtime/*
+!runtime/.gitkeep
+bridge/*
+!bridge/.gitkeep
+
+# Temporary / OS files
+.DS_Store
+Thumbs.db
+*.tmp
+*.log
