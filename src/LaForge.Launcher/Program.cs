@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Windows.Forms;
 
 namespace LaForge.Launcher;
 
@@ -126,6 +128,15 @@ public sealed class RelayRule
 
 public static class Program
 {
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetConsoleWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    private const int SW_HIDE = 0;
+
+    [STAThread]
     public static int Main(string[] args)
     {
         try
@@ -138,6 +149,7 @@ public static class Program
             }
 
             bool dryRun = false;
+            bool cliMode = false;
             bool relayOnly = false;
             string? relayFile = null;
             string? inspectApk = null;
@@ -151,10 +163,16 @@ public static class Program
                     arg.Equals("--verify", StringComparison.OrdinalIgnoreCase))
                 {
                     dryRun = true;
+                    cliMode = true;
+                }
+                else if (arg.Equals("--cli", StringComparison.OrdinalIgnoreCase))
+                {
+                    cliMode = true;
                 }
                 else if (arg.Equals("--relay-only", StringComparison.OrdinalIgnoreCase))
                 {
                     relayOnly = true;
+                    cliMode = true;
                 }
                 else if (arg.Equals("--config", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
                 {
@@ -167,10 +185,12 @@ public static class Program
                 else if (arg.Equals("--inspect", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
                 {
                     inspectApk = args[++i];
+                    cliMode = true;
                 }
                 else if (arg.Equals("--forge", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
                 {
                     forgeApk = args[++i];
+                    cliMode = true;
                 }
                 else if (arg.Equals("--out", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
                 {
@@ -224,6 +244,24 @@ public static class Program
 
             ValidateWindowBoundaries(config.Display.Window);
 
+            // Interactive Desktop Mode (when launched from Explorer without --dry-run / --cli)
+            if (!dryRun && !cliMode)
+            {
+                IntPtr consoleWnd = GetConsoleWindow();
+                if (consoleWnd != IntPtr.Zero)
+                {
+                    ShowWindow(consoleWnd, SW_HIDE);
+                }
+
+                ApplicationConfiguration.Initialize();
+                Application.Run(new LaForgeWindow(config, configDir, relayFile));
+                return 0;
+            }
+
+            string adbExe = dryRun ? config.Runtime.AdbPath : ResolveToolPath(configDir, config.Runtime.AdbPath, "adb.exe");
+            string scrcpyExe = dryRun ? config.Display.ScrcpyPath : ResolveToolPath(configDir, config.Display.ScrcpyPath, "scrcpy.exe");
+            string emulatorExe = dryRun ? config.Runtime.EmulatorPath : ResolveEmulatorPath(configDir, config.Runtime.EmulatorPath);
+
             if (!relayOnly)
             {
                 // Step 1: Launch headless Android runtime via subprocess (-snapshot for fast boot)
@@ -232,8 +270,8 @@ public static class Program
                 Console.WriteLine($"  Command: {config.Runtime.EmulatorPath} {string.Join(' ', emuArgs)}");
                 if (!dryRun)
                 {
-                    StartBackgroundProcess(config.Runtime.EmulatorPath, emuArgs, hidden: true);
-                    WaitForDeviceBoot(config.Runtime.AdbPath, config.Runtime.BootTimeoutSec);
+                    StartBackgroundProcess(emulatorExe, emuArgs, hidden: true);
+                    WaitForDeviceBoot(adbExe, config.Runtime.BootTimeoutSec);
                 }
 
                 // Step 2: Initialize display bridge (scrcpy + SDL2/Direct3D)
@@ -244,7 +282,7 @@ public static class Program
                 Console.WriteLine($"  Command: {config.Display.ScrcpyPath} {string.Join(' ', scrcpyArgs)}");
                 if (!dryRun)
                 {
-                    StartBackgroundProcess(config.Display.ScrcpyPath, scrcpyArgs, hidden: false);
+                    StartBackgroundProcess(scrcpyExe, scrcpyArgs, hidden: false);
                 }
 
                 // Step 3: Sideload payload.apk (if present) and execute target APK via 'adb shell am start'
@@ -258,7 +296,7 @@ public static class Program
                     Console.WriteLine($"  Install Cmd: {config.Runtime.AdbPath} install -r \"{resolvedApkPath}\"");
                     if (!dryRun)
                     {
-                        RunCheckedProcess(config.Runtime.AdbPath, new[] { "install", "-r", resolvedApkPath });
+                        RunCheckedProcess(adbExe, new[] { "install", "-r", resolvedApkPath });
                     }
                 }
 
@@ -267,7 +305,7 @@ public static class Program
                 Console.WriteLine($"  Command: {config.Runtime.AdbPath} {string.Join(' ', apkArgs)}");
                 if (!dryRun)
                 {
-                    RunCheckedProcess(config.Runtime.AdbPath, apkArgs);
+                    RunCheckedProcess(adbExe, apkArgs);
                 }
             }
 
@@ -284,8 +322,8 @@ public static class Program
 
                 if (!dryRun)
                 {
-                    RunCheckedProcess(config.Runtime.AdbPath, pushArgs);
-                    RunCheckedProcess(config.Runtime.AdbPath, intentArgs);
+                    RunCheckedProcess(adbExe, pushArgs);
+                    RunCheckedProcess(adbExe, intentArgs);
                 }
             }
             else
@@ -300,6 +338,100 @@ public static class Program
             Console.Error.WriteLine($"[LaForge Error] {ex.Message}");
             return 1;
         }
+    }
+
+    public static string ResolveToolPath(string configDir, string configuredPath, string fallbackBridgeFileName)
+    {
+        if (Path.IsPathRooted(configuredPath) && File.Exists(configuredPath))
+        {
+            return configuredPath;
+        }
+
+        string relToConfig = Path.GetFullPath(Path.Combine(configDir, configuredPath));
+        if (File.Exists(relToConfig))
+        {
+            return relToConfig;
+        }
+
+        string bridgeLocal = Path.GetFullPath(Path.Combine(configDir, "bridge", fallbackBridgeFileName));
+        if (File.Exists(bridgeLocal))
+        {
+            return bridgeLocal;
+        }
+
+        string bridgeRoot = Path.GetFullPath(Path.Combine(configDir, "..", "..", "bridge", fallbackBridgeFileName));
+        if (File.Exists(bridgeRoot))
+        {
+            return bridgeRoot;
+        }
+
+        return configuredPath;
+    }
+
+    public static string ResolveEmulatorPath(string configDir, string configuredPath)
+    {
+        if (Path.IsPathRooted(configuredPath) && File.Exists(configuredPath))
+        {
+            return configuredPath;
+        }
+
+        string[] candidates =
+        {
+            Path.GetFullPath(Path.Combine(configDir, "runtime", "emulator", "emulator.exe")),
+            Path.GetFullPath(Path.Combine(configDir, "..", "..", "runtime", "emulator", "emulator.exe")),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Android", "Sdk", "emulator", "emulator.exe")
+        };
+
+        foreach (string c in candidates)
+        {
+            if (File.Exists(c))
+            {
+                return c;
+            }
+        }
+
+        return configuredPath;
+    }
+
+    public static string GetConnectedAdbDevice(string adbExe)
+    {
+        try
+        {
+            if (!File.Exists(adbExe)) return "";
+            var psi = new ProcessStartInfo
+            {
+                FileName = adbExe,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+            psi.ArgumentList.Add("devices");
+            using var proc = Process.Start(psi);
+            if (proc == null) return "";
+            string output = proc.StandardOutput.ReadToEnd();
+            proc.WaitForExit(5000);
+
+            foreach (string rawLine in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                string line = rawLine.Trim();
+                if (line.StartsWith("List of devices", StringComparison.OrdinalIgnoreCase) ||
+                    line.StartsWith('*'))
+                {
+                    continue;
+                }
+                string[] parts = line.Split('\t', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 2 && parts[1].Trim().Equals("device", StringComparison.OrdinalIgnoreCase))
+                {
+                    return parts[0].Trim();
+                }
+            }
+        }
+        catch
+        {
+            // Ignore when adb is unavailable
+        }
+        return "";
     }
 
     public static void ValidateWindowBoundaries(WindowConfig win)
@@ -418,7 +550,7 @@ public static class Program
         return string.Join(' ', args.Select(a => a.Contains(' ') || a.Contains('\\') || a.Contains('/') && !a.StartsWith('-') ? $"\"{a}\"" : a));
     }
 
-    private static Process StartBackgroundProcess(string fileName, IEnumerable<string> args, bool hidden)
+    public static Process StartBackgroundProcess(string fileName, IEnumerable<string> args, bool hidden)
     {
         var psi = new ProcessStartInfo
         {
@@ -434,14 +566,15 @@ public static class Program
         return Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start process: {fileName}");
     }
 
-    private static void RunCheckedProcess(string fileName, IEnumerable<string> args)
+    public static void RunCheckedProcess(string fileName, IEnumerable<string> args)
     {
         var psi = new ProcessStartInfo
         {
             FileName = fileName,
             UseShellExecute = false,
             RedirectStandardOutput = true,
-            RedirectStandardError = true
+            RedirectStandardError = true,
+            CreateNoWindow = true
         };
         foreach (string a in args)
         {
@@ -456,7 +589,7 @@ public static class Program
         }
     }
 
-    private static void WaitForDeviceBoot(string adbPath, int timeoutSec)
+    public static void WaitForDeviceBoot(string adbPath, int timeoutSec)
     {
         RunCheckedProcess(adbPath, new[] { "wait-for-device" });
         DateTime deadline = DateTime.UtcNow.AddSeconds(timeoutSec);
@@ -466,7 +599,8 @@ public static class Program
             {
                 FileName = adbPath,
                 UseShellExecute = false,
-                RedirectStandardOutput = true
+                RedirectStandardOutput = true,
+                CreateNoWindow = true
             };
             psi.ArgumentList.Add("shell");
             psi.ArgumentList.Add("getprop");

@@ -9,10 +9,12 @@ public static class ApkPackager
         ApkMetadata meta = ApkManifestParser.ParseApk(apkPath);
         string appSlug = DeriveAppSlug(meta.PackageName);
         string bundleDir = Path.Combine(Path.GetFullPath(outputRootDir), meta.PackageName);
+        string bundleRuntimeDir = Path.Combine(bundleDir, "runtime");
+        string bundleBridgeDir = Path.Combine(bundleDir, "bridge");
 
         Directory.CreateDirectory(bundleDir);
-        Directory.CreateDirectory(Path.Combine(bundleDir, "runtime"));
-        Directory.CreateDirectory(Path.Combine(bundleDir, "bridge"));
+        Directory.CreateDirectory(bundleRuntimeDir);
+        Directory.CreateDirectory(bundleBridgeDir);
 
         // 1. Copy APK to payload.apk
         string payloadDest = Path.Combine(bundleDir, "payload.apk");
@@ -33,7 +35,27 @@ public static class ApkPackager
             }
         }
 
-        // 3. Build bespoke config.json for the ingested APK
+        // 3. Copy embedded scrcpy + SDL + ADB bridge binaries into bundle/bridge/
+        string sourceBridgeDir = Path.Combine(baseDir, "bridge");
+        if (!Directory.Exists(sourceBridgeDir))
+        {
+            sourceBridgeDir = Path.Combine(Directory.GetCurrentDirectory(), "bridge");
+        }
+        if (Directory.Exists(sourceBridgeDir))
+        {
+            foreach (string bridgeFile in Directory.GetFiles(sourceBridgeDir))
+            {
+                string fileName = Path.GetFileName(bridgeFile);
+                if (fileName.Equals(".gitkeep", StringComparison.OrdinalIgnoreCase)) continue;
+                string destBridgeFile = Path.Combine(bundleBridgeDir, fileName);
+                if (!Path.GetFullPath(bridgeFile).Equals(Path.GetFullPath(destBridgeFile), StringComparison.OrdinalIgnoreCase))
+                {
+                    File.Copy(bridgeFile, destBridgeFile, overwrite: true);
+                }
+            }
+        }
+
+        // 4. Build bespoke config.json for the ingested APK
         var config = new LaForgeConfig
         {
             App = new AppConfig
