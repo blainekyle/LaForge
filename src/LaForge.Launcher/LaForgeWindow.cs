@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Drawing;
+using System.Text.Json;
 using System.Windows.Forms;
 
 namespace LaForge.Launcher;
@@ -7,6 +8,7 @@ namespace LaForge.Launcher;
 public sealed class LaForgeWindow : Form
 {
     private readonly LaForgeConfig _config;
+    private readonly string _configPath;
     private readonly string _configDir;
     private readonly string? _initialRelayFile;
 
@@ -17,11 +19,16 @@ public sealed class LaForgeWindow : Form
     private readonly RichTextBox _logBox;
     private readonly Button _btnBoot;
     private readonly Button _btnRelay;
+    private readonly Button _btnOpenHost;
     private readonly Button _btnProvision;
+    private readonly CheckBox _chkHostMount;
 
-    public LaForgeWindow(LaForgeConfig config, string configDir, string? initialRelayFile)
+    private HostFolderBridge? _hostBridge;
+
+    public LaForgeWindow(LaForgeConfig config, string configPath, string configDir, string? initialRelayFile)
     {
         _config = config;
+        _configPath = configPath;
         _configDir = configDir;
         _initialRelayFile = initialRelayFile;
 
@@ -104,15 +111,32 @@ public sealed class LaForgeWindow : Form
         _btnBoot = CreateActionButton("Boot Runtime && Attach scrcpy", Color.FromArgb(35, 134, 54));
         _btnBoot.Click += async (_, _) => await RunSessionPipelineAsync(_initialRelayFile);
 
-        _btnRelay = CreateActionButton("Test File Association Relay...", Color.FromArgb(31, 111, 235));
+        _btnRelay = CreateActionButton("Test File Relay...", Color.FromArgb(31, 111, 235));
         _btnRelay.Click += OnTestRelayClicked;
 
-        _btnProvision = CreateActionButton("Provision Headless Android SDK Runtime", Color.FromArgb(110, 64, 201));
+        _btnOpenHost = CreateActionButton("Open HOST Share", Color.FromArgb(45, 90, 140));
+        _btnOpenHost.Click += OnOpenHostShareClicked;
+
+        _btnProvision = CreateActionButton("Provision Android SDK Runtime", Color.FromArgb(110, 64, 201));
         _btnProvision.Click += OnProvisionRuntimeClicked;
+
+        _chkHostMount = new CheckBox
+        {
+            Text = $"Mount {_config.Storage.GuestMountPath} (Host Bridge)",
+            Checked = _config.Storage.EnableHostMount,
+            AutoSize = true,
+            ForeColor = Color.FromArgb(126, 231, 135),
+            Font = new Font("Segoe UI Semibold", 9.5F, FontStyle.Bold),
+            Margin = new Padding(8, 8, 12, 0),
+            Cursor = Cursors.Hand
+        };
+        _chkHostMount.CheckedChanged += OnHostMountToggleChanged;
 
         bottomPanel.Controls.Add(_btnBoot);
         bottomPanel.Controls.Add(_btnRelay);
+        bottomPanel.Controls.Add(_btnOpenHost);
         bottomPanel.Controls.Add(_btnProvision);
+        bottomPanel.Controls.Add(_chkHostMount);
 
         // Center Live Console Log
         _logBox = new RichTextBox
@@ -146,6 +170,7 @@ public sealed class LaForgeWindow : Form
             }
         };
 
+        FormClosed += (_, _) => _hostBridge?.Dispose();
         Shown += async (_, _) => await RunSessionPipelineAsync(_initialRelayFile);
     }
 
@@ -175,8 +200,8 @@ public sealed class LaForgeWindow : Form
             BackColor = backColor,
             ForeColor = Color.White,
             Font = new Font("Segoe UI Semibold", 9.5F, FontStyle.Bold),
-            Padding = new Padding(12, 4, 12, 4),
-            Margin = new Padding(0, 0, 12, 0),
+            Padding = new Padding(10, 4, 10, 4),
+            Margin = new Padding(0, 0, 10, 0),
             Cursor = Cursors.Hand
         };
     }
@@ -202,6 +227,9 @@ public sealed class LaForgeWindow : Form
         {
             AppendLog("====================================================================", Color.FromArgb(88, 166, 255));
             AppendLog($"Initializing LaForge Session for {_config.App.PackageName}...", Color.FromArgb(88, 166, 255));
+
+            string hostDir = HostFolderBridge.EnsureHostFolderAndShortcut(_config.Storage, _configDir);
+            AppendLog($"Host Share Directory: {hostDir} (Shortcut: {Path.Combine(_configDir, "HOST.lnk")})");
 
             string adbExe = Program.ResolveToolPath(_configDir, _config.Runtime.AdbPath, "adb.exe");
             string scrcpyExe = Program.ResolveToolPath(_configDir, _config.Display.ScrcpyPath, "scrcpy.exe");
@@ -257,8 +285,13 @@ public sealed class LaForgeWindow : Form
 
                 await Task.Run(() => Program.WaitForDeviceBoot(adbExe, _config.Runtime.BootTimeoutSec));
 
-                AppendLog($"Configuring guest display geometry ({_config.Display.Window.Width}x{_config.Display.Window.Height} @ 160 dpi)...");
+                AppendLog($"Configuring guest display geometry ({_config.Display.Window.Width}x{_config.Display.Window.Height} @ 160 dpi) & kiosk statusbar lock...");
                 await Task.Run(() => Program.ConfigureGuestDisplay(adbExe, _config.Display.Window));
+
+                // Initialize Host Folder Bridge (%LOCALAPPDATA%\LaForge\HOST <-> /sdcard/HOST)
+                _hostBridge?.Dispose();
+                _hostBridge = new HostFolderBridge(_config.Storage, adbExe, msg => AppendLog(msg, Color.FromArgb(165, 214, 255)));
+                await Task.Run(() => _hostBridge.Start());
 
                 if (payloadReady)
                 {
@@ -291,7 +324,7 @@ public sealed class LaForgeWindow : Form
                 AppendLog("Notice: Display Bridge (scrcpy.exe + SDL3.dll) and ADB (adb.exe) are wired and ready,", Color.FromArgb(255, 166, 87));
                 AppendLog("but no Android guest VM or ADB device is currently running on this host.", Color.FromArgb(255, 166, 87));
                 AppendLog("To run the APK live:", Color.FromArgb(230, 235, 245));
-                AppendLog("  1. Click 'Provision Headless Android SDK Runtime' below to download the Android x86_64 emulator image, OR", Color.FromArgb(230, 235, 245));
+                AppendLog("  1. Click 'Provision Android SDK Runtime' below to download the Android x86_64 emulator image, OR", Color.FromArgb(230, 235, 245));
                 AppendLog("  2. Connect any Android device/emulator via ADB and click 'Boot Runtime & Attach scrcpy'.", Color.FromArgb(230, 235, 245));
 
                 if (!string.IsNullOrWhiteSpace(relayFile) && File.Exists(relayFile))
@@ -308,6 +341,49 @@ public sealed class LaForgeWindow : Form
         {
             _btnBoot.Enabled = true;
         }
+    }
+
+    private async void OnHostMountToggleChanged(object? sender, EventArgs e)
+    {
+        _config.Storage.EnableHostMount = _chkHostMount.Checked;
+        _chkHostMount.ForeColor = _chkHostMount.Checked ? Color.FromArgb(126, 231, 135) : Color.FromArgb(170, 180, 195);
+
+        try
+        {
+            var jsonOpts = new JsonSerializerOptions { WriteIndented = true };
+            File.WriteAllText(_configPath, JsonSerializer.Serialize(_config, jsonOpts));
+            AppendLog($"Updated config.json: storage.enable_host_mount = {_config.Storage.EnableHostMount}", Color.FromArgb(88, 166, 255));
+
+            string adbExe = Program.ResolveToolPath(_configDir, _config.Runtime.AdbPath, "adb.exe");
+            string attachedDevice = await Task.Run(() => Program.GetConnectedAdbDevice(adbExe));
+            _hostBridge?.Dispose();
+            _hostBridge = null;
+
+            if (_config.Storage.EnableHostMount && !string.IsNullOrEmpty(attachedDevice))
+            {
+                _hostBridge = new HostFolderBridge(_config.Storage, adbExe, msg => AppendLog(msg, Color.FromArgb(165, 214, 255)));
+                await Task.Run(() => _hostBridge.Start());
+            }
+            else if (!_config.Storage.EnableHostMount)
+            {
+                AppendLog("[HostBridge] Stopped host folder synchronization.", Color.FromArgb(255, 166, 87));
+            }
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"[HostBridge Error] {ex.Message}", Color.FromArgb(255, 123, 114));
+        }
+    }
+
+    private void OnOpenHostShareClicked(object? sender, EventArgs e)
+    {
+        string hostDir = HostFolderBridge.EnsureHostFolderAndShortcut(_config.Storage, _configDir);
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = "explorer.exe",
+            Arguments = $"\"{hostDir}\"",
+            UseShellExecute = true
+        });
     }
 
     private async void OnTestRelayClicked(object? sender, EventArgs e)

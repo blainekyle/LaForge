@@ -31,6 +31,12 @@
     "max_fps": 60,
     "stay_awake": true
   },
+  "storage": {
+    "enable_host_mount": true,
+    "host_folder_path": "%LOCALAPPDATA%\\LaForge\\HOST",
+    "guest_mount_path": "/sdcard/HOST",
+    "create_shortcut": true
+  },
   "relays": {
     "remote_staging_dir": "/sdcard/Download",
     "associations": {

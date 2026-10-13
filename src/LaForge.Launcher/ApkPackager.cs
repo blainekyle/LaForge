@@ -4,7 +4,7 @@ namespace LaForge.Launcher;
 
 public static class ApkPackager
 {
-    public static string ForgeBundle(string apkPath, string outputRootDir)
+    public static string ForgeBundle(string apkPath, string outputRootDir, bool enableHostMount = true)
     {
         ApkMetadata meta = ApkManifestParser.ParseApk(apkPath);
         string appSlug = DeriveAppSlug(meta.PackageName);
@@ -94,6 +94,13 @@ public static class ApkPackager
                 MaxFps = 60,
                 StayAwake = true
             },
+            Storage = new StorageConfig
+            {
+                EnableHostMount = enableHostMount,
+                HostFolderPath = @"%LOCALAPPDATA%\LaForge\HOST",
+                GuestMountPath = "/sdcard/HOST",
+                CreateShortcut = true
+            },
             Relays = new RelaysConfig
             {
                 RemoteStagingDir = "/sdcard/Download",
@@ -104,6 +111,9 @@ public static class ApkPackager
         var jsonOpts = new JsonSerializerOptions { WriteIndented = true };
         string configJson = JsonSerializer.Serialize(config, jsonOpts);
         File.WriteAllText(Path.Combine(bundleDir, "config.json"), configJson);
+
+        // 5. Ensure dedicated %LOCALAPPDATA%\LaForge\HOST directory exists and drop HOST.lnk next to launcher.exe
+        HostFolderBridge.EnsureHostFolderAndShortcut(config.Storage, bundleDir);
 
         return bundleDir;
     }

@@ -17,6 +17,9 @@ public sealed class LaForgeConfig
     [JsonPropertyName("display")]
     public DisplayConfig Display { get; set; } = new();
 
+    [JsonPropertyName("storage")]
+    public StorageConfig Storage { get; set; } = new();
+
     [JsonPropertyName("relays")]
     public RelaysConfig Relays { get; set; } = new();
 }
@@ -108,6 +111,21 @@ public sealed class WindowConfig
     public bool Fullscreen { get; set; }
 }
 
+public sealed class StorageConfig
+{
+    [JsonPropertyName("enable_host_mount")]
+    public bool EnableHostMount { get; set; } = true;
+
+    [JsonPropertyName("host_folder_path")]
+    public string HostFolderPath { get; set; } = @"%LOCALAPPDATA%\LaForge\HOST";
+
+    [JsonPropertyName("guest_mount_path")]
+    public string GuestMountPath { get; set; } = "/sdcard/HOST";
+
+    [JsonPropertyName("create_shortcut")]
+    public bool CreateShortcut { get; set; } = true;
+}
+
 public sealed class RelaysConfig
 {
     [JsonPropertyName("remote_staging_dir")]
@@ -151,6 +169,7 @@ public static class Program
             bool dryRun = false;
             bool cliMode = false;
             bool relayOnly = false;
+            bool forgeHostMount = true;
             string? relayFile = null;
             string? inspectApk = null;
             string? forgeApk = null;
@@ -173,6 +192,14 @@ public static class Program
                 {
                     relayOnly = true;
                     cliMode = true;
+                }
+                else if (arg.Equals("--no-host-mount", StringComparison.OrdinalIgnoreCase))
+                {
+                    forgeHostMount = false;
+                }
+                else if (arg.Equals("--host-mount", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    forgeHostMount = !args[++i].Equals("false", StringComparison.OrdinalIgnoreCase);
                 }
                 else if (arg.Equals("--config", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
                 {
@@ -218,11 +245,12 @@ public static class Program
             if (!string.IsNullOrWhiteSpace(forgeApk))
             {
                 ApkMetadata meta = ApkManifestParser.ParseApk(forgeApk);
-                string bundleDir = ApkPackager.ForgeBundle(forgeApk, forgeOutDir);
+                string bundleDir = ApkPackager.ForgeBundle(forgeApk, forgeOutDir, forgeHostMount);
                 Console.WriteLine($"[LaForge APK Packager] Forged standalone bundle:");
                 Console.WriteLine($"  Source APK        : {meta.ApkPath}");
                 Console.WriteLine($"  Package Name      : {meta.PackageName} (v{meta.VersionName})");
                 Console.WriteLine($"  Launcher Activity : {meta.LauncherActivity}");
+                Console.WriteLine($"  Host Share Mount  : {(forgeHostMount ? "Enabled (/sdcard/HOST)" : "Disabled")}");
                 Console.WriteLine($"  Output Bundle Dir : {bundleDir}");
                 return 0;
             }
@@ -233,16 +261,20 @@ public static class Program
                 return 1;
             }
 
-            string configDir = Path.GetDirectoryName(Path.GetFullPath(configPath)) ?? baseDir;
+            string fullConfigPath = Path.GetFullPath(configPath);
+            string configDir = Path.GetDirectoryName(fullConfigPath) ?? baseDir;
             var jsonOptions = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
                 ReadCommentHandling = JsonCommentHandling.Skip
             };
-            var config = JsonSerializer.Deserialize<LaForgeConfig>(File.ReadAllText(configPath), jsonOptions)
+            var config = JsonSerializer.Deserialize<LaForgeConfig>(File.ReadAllText(fullConfigPath), jsonOptions)
                          ?? throw new InvalidOperationException("Failed to deserialize config.json.");
 
             ValidateWindowBoundaries(config.Display.Window);
+
+            // Ensure dedicated %LOCALAPPDATA%\LaForge\HOST directory and adjacent HOST.lnk shortcut exist
+            string resolvedHostShare = HostFolderBridge.EnsureHostFolderAndShortcut(config.Storage, configDir);
 
             // Interactive Desktop Mode (when launched from Explorer without --dry-run / --cli)
             if (!dryRun && !cliMode)
@@ -254,7 +286,7 @@ public static class Program
                 }
 
                 ApplicationConfiguration.Initialize();
-                Application.Run(new LaForgeWindow(config, configDir, relayFile));
+                Application.Run(new LaForgeWindow(config, fullConfigPath, configDir, relayFile));
                 return 0;
             }
 
@@ -276,6 +308,17 @@ public static class Program
                     }
                     WaitForDeviceBoot(adbExe, config.Runtime.BootTimeoutSec);
                     ConfigureGuestDisplay(adbExe, config.Display.Window);
+                }
+
+                // Host Folder Bridge (%LOCALAPPDATA%\LaForge\HOST <-> /sdcard/HOST)
+                if (config.Storage.EnableHostMount)
+                {
+                    Console.WriteLine($"[LaForge] Host Share Mount: {resolvedHostShare} <-> {config.Storage.GuestMountPath}");
+                    if (!dryRun)
+                    {
+                        using var bridge = new HostFolderBridge(config.Storage, adbExe, Console.WriteLine);
+                        bridge.Start();
+                    }
                 }
 
                 // Step 2: Initialize display bridge (scrcpy + SDL2/Direct3D)
@@ -728,7 +771,6 @@ public static class Program
             string bootOut = RunProcessCaptureOutput(adbPath, new[] { "shell", "getprop", "sys.boot_completed" }, 5000).Trim();
             if (bootOut == "1")
             {
-                // Also verify User 0 has exited FallbackHome ("Phone is starting...")
                 string dumpsys = RunProcessCaptureOutput(adbPath, new[] { "shell", "dumpsys", "activity", "activities" }, 5000);
                 if (!dumpsys.Contains("FallbackHome", StringComparison.OrdinalIgnoreCase) &&
                     !dumpsys.Contains("com.android.sdksetup", StringComparison.OrdinalIgnoreCase))
