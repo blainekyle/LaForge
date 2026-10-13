@@ -106,6 +106,7 @@ foreach ($item in $testMatrix) {
     $bundleRuntime = Join-Path $bundleDir "runtime"
     $bundleBridge  = Join-Path $bundleDir "bridge"
     $hostShareDir  = Join-Path $env:LOCALAPPDATA "LaForge\HOST"
+    $appConfFile   = Join-Path $env:LOCALAPPDATA "LaForge\config\$pkg.conf"
 
     Assert-Condition (Test-Path -LiteralPath $bundleExe) "$pkg : Bundle contains standalone launcher.exe"
     Assert-Condition (Test-Path -LiteralPath $bespokeExe) "$pkg : Bundle contains bespoke $($item.BespokeExe)"
@@ -114,6 +115,7 @@ foreach ($item in $testMatrix) {
     Assert-Condition (Test-Path -LiteralPath $bundlePayload) "$pkg : Bundle contains sideloaded payload.apk"
     Assert-Condition (Test-Path -LiteralPath $bundleLnk) "$pkg : Bundle contains adjacent HOST.lnk shortcut to %LOCALAPPDATA%\LaForge\HOST"
     Assert-Condition (Test-Path -LiteralPath $hostShareDir) "$pkg : Dedicated %LOCALAPPDATA%\LaForge\HOST folder exists"
+    Assert-Condition (Test-Path -LiteralPath $appConfFile) "$pkg : Per-app config file exists in %LOCALAPPDATA%\LaForge\config\$pkg.conf"
     Assert-Condition ((Test-Path -LiteralPath $bundleRuntime) -and (Test-Path -LiteralPath $bundleBridge)) "$pkg : Bundle contains runtime/ and bridge/ directories"
 
     # 2. Execute the forged bundle's bespoke EXE with its domain-specific relay file

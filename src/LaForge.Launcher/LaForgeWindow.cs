@@ -53,7 +53,8 @@ public sealed class LaForgeWindow : Form
 
         // System Tray NotifyIcon for Single-Window UX
         var trayMenu = new ContextMenuStrip();
-        trayMenu.Items.Add("Show / Hide Control Console", null, (_, _) => ToggleConsoleVisibility());
+        trayMenu.Items.Add("Open LaForge Central Console", null, OnOpenCentralConsoleClicked);
+        trayMenu.Items.Add("Show / Hide App Control Console", null, (_, _) => ToggleConsoleVisibility());
         trayMenu.Items.Add("Open Shared HOST Folder", null, OnOpenHostShareClicked);
         trayMenu.Items.Add("Test File Association Relay...", null, OnTestRelayClicked);
         trayMenu.Items.Add(new ToolStripSeparator());
@@ -368,8 +369,11 @@ public sealed class LaForgeWindow : Form
             _lblPayloadStatus.Text = $"Sideload Payload APK\n{(payloadReady ? $"READY ({payloadMb:F1} MB)" : "MISSING")}";
             _lblPayloadStatus.ForeColor = payloadReady ? Color.FromArgb(126, 231, 135) : Color.FromArgb(255, 123, 114);
 
+            AppPolicyConfig appPolicy = LaForgeAppRegistry.LoadOrCreate(_config, _configDir);
+            _config.Storage.EnableHostMount = appPolicy.HostShareEnabled;
+
             var emuArgs = Program.BuildEmulatorArgs(_config.Runtime);
-            var scrcpyArgs = Program.BuildScrcpyArgs(_config, forExecution: true);
+            var scrcpyArgs = Program.BuildScrcpyArgs(_config, forExecution: true, appPolicy);
             var apkArgs = Program.BuildApkLaunchArgs(_config.App);
 
             AppendLog($"[Step 1/4] Headless Emulator Command: {emulatorExe} {string.Join(' ', emuArgs)}");
@@ -414,9 +418,18 @@ public sealed class LaForgeWindow : Form
                     AppendLog("APK sideload & storage permissions complete.");
                 }
 
-                AppendLog($"Starting {_config.App.PackageName}/{_config.App.ActivityName}...");
-                string startResult = await Task.Run(() => Program.LaunchApkWithRetry(adbExe, _config.App, 15));
-                AppendLog($"Target APK launched: {startResult}");
+                await Task.Run(() => LaForgeAppRegistry.EnforcePoliciesOnGuest(adbExe, appPolicy, msg => AppendLog(msg, Color.FromArgb(210, 168, 255))));
+
+                if (!appPolicy.VirtualDisplay || !scrcpyReady)
+                {
+                    AppendLog($"Starting {_config.App.PackageName}/{_config.App.ActivityName} on primary display...");
+                    string startResult = await Task.Run(() => Program.LaunchApkWithRetry(adbExe, _config.App, 15));
+                    AppendLog($"Target APK launched: {startResult}");
+                }
+                else
+                {
+                    AppendLog($"Virtual Display Mode enabled: scrcpy will allocate an isolated 1280x720/160 display for {_config.App.PackageName}.");
+                }
 
                 if (!string.IsNullOrWhiteSpace(relayFile))
                 {
@@ -425,9 +438,15 @@ public sealed class LaForgeWindow : Form
 
                 if (scrcpyReady)
                 {
-                    AppendLog("Attaching scrcpy SDL3/Direct3D display bridge...");
+                    AppendLog("Attaching scrcpy SDL3/Direct3D virtual display bridge...");
                     string scrcpyIconPath = Path.Combine(_configDir, "bridge", "scrcpy.png");
-                    _activeScrcpyProcess = Program.EnsureSingleScrcpyInstance(scrcpyExe, scrcpyArgs, scrcpyIconPath);
+                    _activeScrcpyProcess = Program.EnsureSingleScrcpyInstance(
+                        scrcpyExe,
+                        scrcpyArgs,
+                        scrcpyIconPath,
+                        _config.App.Title,
+                        appPolicy.LastScrcpyPid);
+                    LaForgeAppRegistry.RecordAppLaunch(_config, _configDir, _activeScrcpyProcess.Id);
                     _activeScrcpyProcess.EnableRaisingEvents = true;
                     _activeScrcpyProcess.Exited += OnScrcpyProcessExited;
 
@@ -470,8 +489,47 @@ public sealed class LaForgeWindow : Form
         }
     }
 
+    private void OnOpenCentralConsoleClicked(object? sender, EventArgs e)
+    {
+        try
+        {
+            string exePath = Environment.ProcessPath ?? Path.Combine(_configDir, "launcher.exe");
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = "--console",
+                WorkingDirectory = _configDir,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"[Console Error] {ex.Message}", Color.FromArgb(255, 123, 114));
+        }
+    }
+
     private void OnScrcpyProcessExited(object? sender, EventArgs e)
     {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(_config.App.PackageName))
+            {
+                var latestPolicy = LaForgeAppRegistry.ParseConfFile(LaForgeAppRegistry.GetConfFilePath(_config.App.PackageName));
+                if (!latestPolicy.BackgroundOnClose)
+                {
+                    string adbExe = Program.ResolveToolPath(_configDir, _config.Runtime.AdbPath, "adb.exe");
+                    if (File.Exists(adbExe))
+                    {
+                        Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "am", "force-stop", _config.App.PackageName }, 3000);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+
         if (IsDisposed) return;
         BeginInvoke(() =>
         {

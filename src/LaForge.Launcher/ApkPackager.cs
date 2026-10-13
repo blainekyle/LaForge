@@ -130,6 +130,9 @@ public static class ApkPackager
         // 6. Ensure dedicated %LOCALAPPDATA%\LaForge\HOST directory exists and drop HOST.lnk next to launcher.exe
         HostFolderBridge.EnsureHostFolderAndShortcut(config.Storage, bundleDir);
 
+        // 7. Register app in %LOCALAPPDATA%\LaForge\config\<package>.conf for LaForge Central Console
+        LaForgeAppRegistry.LoadOrCreate(config, bundleDir);
+
         return bundleDir;
     }
 

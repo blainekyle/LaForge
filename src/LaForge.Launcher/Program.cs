@@ -178,6 +178,8 @@ public static class Program
             bool dryRun = false;
             bool cliMode = false;
             bool relayOnly = false;
+            bool consoleMode = Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? "")
+                .Equals("LaForgeConsole", StringComparison.OrdinalIgnoreCase);
             bool forgeHostMount = true;
             string? relayFile = null;
             string? inspectApk = null;
@@ -192,6 +194,10 @@ public static class Program
                 {
                     dryRun = true;
                     cliMode = true;
+                }
+                else if (arg.Equals("--console", StringComparison.OrdinalIgnoreCase))
+                {
+                    consoleMode = true;
                 }
                 else if (arg.Equals("--cli", StringComparison.OrdinalIgnoreCase))
                 {
@@ -236,6 +242,19 @@ public static class Program
                 {
                     relayFile = arg;
                 }
+            }
+
+            if (consoleMode)
+            {
+                IntPtr consoleWnd = GetConsoleWindow();
+                if (consoleWnd != IntPtr.Zero)
+                {
+                    ShowWindow(consoleWnd, SW_HIDE);
+                }
+
+                ApplicationConfiguration.Initialize();
+                Application.Run(new LaForgeConsoleWindow(baseDir));
+                return 0;
             }
 
             if (!string.IsNullOrWhiteSpace(inspectApk))
@@ -558,7 +577,12 @@ public static class Program
         return string.IsNullOrWhiteSpace(lastOut) ? "Completed" : lastOut.Trim();
     }
 
-    public static Process EnsureSingleScrcpyInstance(string scrcpyExe, IEnumerable<string> scrcpyArgs, string? iconPath = null)
+    public static Process EnsureSingleScrcpyInstance(
+        string scrcpyExe,
+        IEnumerable<string> scrcpyArgs,
+        string? iconPath = null,
+        string? appTitle = null,
+        int previousPid = 0)
     {
         try
         {
@@ -566,8 +590,14 @@ public static class Program
             {
                 try
                 {
-                    existing.Kill();
-                    existing.WaitForExit(2000);
+                    bool sameApp = (previousPid > 0 && existing.Id == previousPid) ||
+                                   (!string.IsNullOrWhiteSpace(appTitle) &&
+                                    existing.MainWindowTitle.Equals(appTitle, StringComparison.OrdinalIgnoreCase));
+                    if (sameApp)
+                    {
+                        existing.Kill();
+                        existing.WaitForExit(1500);
+                    }
                 }
                 catch
                 {
@@ -625,7 +655,7 @@ public static class Program
         return list;
     }
 
-    public static List<string> BuildScrcpyArgs(LaForgeConfig cfg, bool forExecution = false)
+    public static List<string> BuildScrcpyArgs(LaForgeConfig cfg, bool forExecution = false, AppPolicyConfig? policy = null)
     {
         var disp = cfg.Display;
         var win = disp.Window;
@@ -633,11 +663,35 @@ public static class Program
             ? $"--window-title={cfg.App.Title}"
             : $"--window-title=\"{cfg.App.Title}\"";
 
+        int winX = win.X;
+        int winY = win.Y;
+        int otherScrcpyCount = 0;
+
+        if (forExecution)
+        {
+            try
+            {
+                otherScrcpyCount = Process.GetProcessesByName("scrcpy")
+                    .Count(p => !p.MainWindowTitle.Equals(cfg.App.Title, StringComparison.OrdinalIgnoreCase) &&
+                                p.MainWindowHandle != IntPtr.Zero);
+                if (otherScrcpyCount > 0)
+                {
+                    int offset = (otherScrcpyCount % 6) * 38;
+                    winX += offset;
+                    winY += offset;
+                }
+            }
+            catch
+            {
+                // Ignore
+            }
+        }
+
         var list = new List<string>
         {
             titleArg,
-            $"--window-x={win.X}",
-            $"--window-y={win.Y}",
+            $"--window-x={winX}",
+            $"--window-y={winY}",
             $"--window-width={win.Width}",
             $"--window-height={win.Height}"
         };
@@ -665,6 +719,32 @@ public static class Program
         {
             list.Add("--stay-awake");
         }
+
+        if (forExecution)
+        {
+            list.Add("--no-cleanup");
+
+            bool useVirtualDisplay = policy?.VirtualDisplay ?? true;
+            if (useVirtualDisplay && !string.IsNullOrWhiteSpace(cfg.App.PackageName))
+            {
+                list.Add($"--new-display={win.Width}x{win.Height}/160");
+                list.Add($"--start-app={cfg.App.PackageName}");
+                list.Add("--no-vd-system-decorations");
+                list.Add("--no-vd-destroy-content");
+                list.Add("--display-ime-policy=local");
+            }
+
+            if ((policy?.MuteAudio ?? false) || otherScrcpyCount > 0)
+            {
+                list.Add("--no-audio");
+            }
+
+            if (policy?.BlockHid ?? false)
+            {
+                list.Add("--no-control");
+            }
+        }
+
         return list;
     }
 

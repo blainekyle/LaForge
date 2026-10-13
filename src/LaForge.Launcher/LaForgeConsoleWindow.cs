@@ -1,0 +1,857 @@
+using System.Diagnostics;
+using System.Drawing;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+
+namespace LaForge.Launcher;
+
+public sealed class LaForgeConsoleWindow : Form
+{
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    private const int SW_RESTORE = 9;
+
+    private readonly string _baseDir;
+    private readonly string _adbExe;
+    private readonly string _scrcpyExe;
+    private readonly FlowLayoutPanel _appsFlowPanel;
+    private readonly ListView _notifListView;
+    private readonly Label _lblHeaderStats;
+    private readonly NotifyIcon _trayIcon;
+    private readonly System.Windows.Forms.Timer _refreshTimer;
+
+    private readonly Dictionary<string, AppCardControls> _cardsByPackage = new(StringComparer.OrdinalIgnoreCase);
+    private List<AppPolicyConfig> _apps = new();
+    private Process? _headlessAudioBridgeProcess;
+    private bool _isRefreshing;
+    private bool _allowExit;
+
+    private sealed class AppCardControls
+    {
+        public required Panel CardPanel { get; init; }
+        public required PictureBox IconBox { get; init; }
+        public required Label TitleLabel { get; init; }
+        public required Label PackageLabel { get; init; }
+        public required Label StatusBadge { get; init; }
+        public required Label AudioBadge { get; init; }
+        public required Label NotifBadge { get; init; }
+        public required Label PolicyBadge { get; init; }
+        public required Button BtnLaunchFocus { get; init; }
+        public required Button BtnBackground { get; init; }
+        public required Button BtnStop { get; init; }
+        public required Button BtnGear { get; init; }
+    }
+
+    public LaForgeConsoleWindow(string baseDir)
+    {
+        _baseDir = baseDir;
+        _adbExe = Program.ResolveToolPath(baseDir, "bridge/adb.exe", "adb.exe");
+        _scrcpyExe = Program.ResolveToolPath(baseDir, "bridge/scrcpy.exe", "scrcpy.exe");
+
+        Text = "LaForge Console — Multi-Display App & Notification Manager";
+        Size = new Size(1060, 740);
+        MinimumSize = new Size(920, 620);
+        StartPosition = FormStartPosition.CenterScreen;
+        BackColor = Color.FromArgb(15, 17, 23);
+        ForeColor = Color.FromArgb(230, 235, 245);
+        Font = new Font("Segoe UI", 9.5F, FontStyle.Regular);
+
+        string consoleIco = Path.Combine(LaForgeAppRegistry.GetConfigDirectory(), "console.ico");
+        string consolePng = Path.Combine(LaForgeAppRegistry.GetConfigDirectory(), "console.png");
+        AppIconGenerator.EnsureAppIcons("com.laforge.console", "LaForge Console", consoleIco, consolePng);
+        if (File.Exists(consoleIco))
+        {
+            Icon = new Icon(consoleIco);
+        }
+
+        // System Tray Service Setup
+        var trayMenu = new ContextMenuStrip();
+        trayMenu.Items.Add("Show LaForge Console", null, (_, _) => ShowAndActivate());
+        trayMenu.Items.Add("Open Shared HOST Folder (%LOCALAPPDATA%\\LaForge\\HOST)", null, (_, _) => OpenFolderInExplorer(HostFolderBridge.ResolveHostDirectory(@"%LOCALAPPDATA%\LaForge\HOST")));
+        trayMenu.Items.Add("Open App Config Folder (%LOCALAPPDATA%\\LaForge\\config)", null, (_, _) => OpenFolderInExplorer(LaForgeAppRegistry.GetConfigDirectory()));
+        trayMenu.Items.Add(new ToolStripSeparator());
+        trayMenu.Items.Add("Exit LaForge Console Service", null, (_, _) => ExitService());
+
+        _trayIcon = new NotifyIcon
+        {
+            Icon = Icon ?? SystemIcons.Application,
+            Text = "LaForge Console — Multi-App Tray Service",
+            ContextMenuStrip = trayMenu,
+            Visible = true
+        };
+        _trayIcon.DoubleClick += (_, _) => ShowAndActivate();
+
+        // Top Header Bar
+        var headerPanel = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 76,
+            BackColor = Color.FromArgb(22, 26, 35),
+            Padding = new Padding(20, 12, 20, 12)
+        };
+
+        var lblTitle = new Label
+        {
+            Text = "LaForge Central Console",
+            Font = new Font("Segoe UI Semibold", 16F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(88, 166, 255),
+            AutoSize = true,
+            Location = new Point(20, 10)
+        };
+
+        _lblHeaderStats = new Label
+        {
+            Text = $"Config Store: {LaForgeAppRegistry.GetConfigDirectory()}   |   Scanning remembered LaForge apps...",
+            Font = new Font("Consolas", 9F, FontStyle.Regular),
+            ForeColor = Color.FromArgb(160, 175, 195),
+            AutoSize = true,
+            Location = new Point(22, 44)
+        };
+
+        var headerActions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Right,
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Padding = new Padding(0, 10, 4, 0)
+        };
+
+        var btnOpenConfigDir = CreateButton("📂 /config (.conf)", Color.FromArgb(45, 55, 72));
+        btnOpenConfigDir.Click += (_, _) => OpenFolderInExplorer(LaForgeAppRegistry.GetConfigDirectory());
+
+        var btnOpenHostDir = CreateButton("📂 /HOST Share", Color.FromArgb(35, 90, 135));
+        btnOpenHostDir.Click += (_, _) => OpenFolderInExplorer(HostFolderBridge.ResolveHostDirectory(@"%LOCALAPPDATA%\LaForge\HOST"));
+
+        var btnRefreshNow = CreateButton("⟳ Refresh", Color.FromArgb(35, 134, 54));
+        btnRefreshNow.Click += async (_, _) => await RefreshTelemetryAsync();
+
+        var btnExitService = CreateButton("⏻ Quit Console", Color.FromArgb(140, 45, 50));
+        btnExitService.Click += (_, _) => ExitService();
+
+        headerActions.Controls.Add(btnOpenConfigDir);
+        headerActions.Controls.Add(btnOpenHostDir);
+        headerActions.Controls.Add(btnRefreshNow);
+        headerActions.Controls.Add(btnExitService);
+
+        headerPanel.Controls.Add(headerActions);
+        headerPanel.Controls.Add(lblTitle);
+        headerPanel.Controls.Add(_lblHeaderStats);
+
+        // Bottom Notification Center Panel
+        var notifContainer = new Panel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 205,
+            BackColor = Color.FromArgb(19, 22, 30),
+            Padding = new Padding(18, 8, 18, 12)
+        };
+
+        var notifHeader = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 32
+        };
+
+        var lblNotifTitle = new Label
+        {
+            Text = "🔔 Intercepted Android Notification Center (Suppressed from App Shades)",
+            Font = new Font("Segoe UI Semibold", 10.5F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(255, 190, 90),
+            AutoSize = true,
+            Location = new Point(2, 5)
+        };
+
+        var btnDismissNotifs = new Button
+        {
+            Text = "Clear All Notifications",
+            Dock = DockStyle.Right,
+            Width = 165,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(45, 52, 66),
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI Semibold", 8.5F, FontStyle.Bold),
+            Cursor = Cursors.Hand
+        };
+        btnDismissNotifs.Click += async (_, _) =>
+        {
+            await Task.Run(() => Program.RunProcessCaptureOutput(_adbExe, new[] { "shell", "service", "call", "notification", "1" }, 4000));
+            await RefreshTelemetryAsync();
+        };
+
+        notifHeader.Controls.Add(btnDismissNotifs);
+        notifHeader.Controls.Add(lblNotifTitle);
+
+        _notifListView = new ListView
+        {
+            Dock = DockStyle.Fill,
+            View = View.Details,
+            FullRowSelect = true,
+            GridLines = false,
+            BackColor = Color.FromArgb(13, 15, 21),
+            ForeColor = Color.FromArgb(225, 232, 240),
+            BorderStyle = BorderStyle.FixedSingle,
+            Font = new Font("Segoe UI", 9.5F, FontStyle.Regular)
+        };
+        _notifListView.Columns.Add("LaForge App", 210);
+        _notifListView.Columns.Add("Notification Title", 270);
+        _notifListView.Columns.Add("Message / Content", 380);
+        _notifListView.Columns.Add("Channel", 140);
+
+        notifContainer.Controls.Add(_notifListView);
+        notifContainer.Controls.Add(notifHeader);
+
+        // Center Remembered Apps Grid / List
+        _appsFlowPanel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoScroll = true,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            Padding = new Padding(18, 14, 18, 14),
+            BackColor = Color.FromArgb(15, 17, 23)
+        };
+
+        Controls.Add(_appsFlowPanel);
+        Controls.Add(notifContainer);
+        Controls.Add(headerPanel);
+
+        FormClosing += (_, e) =>
+        {
+            if (!_allowExit && e.CloseReason == CloseReason.UserClosing)
+            {
+                e.Cancel = true;
+                Hide();
+                ShowInTaskbar = false;
+                return;
+            }
+
+            _refreshTimer?.Stop();
+            _trayIcon.Visible = false;
+            _trayIcon.Dispose();
+            StopHeadlessAudioBridge();
+        };
+
+        _refreshTimer = new System.Windows.Forms.Timer { Interval = 2500 };
+        _refreshTimer.Tick += async (_, _) => await RefreshTelemetryAsync();
+
+        Shown += async (_, _) =>
+        {
+            RebuildAppCards();
+            await RefreshTelemetryAsync();
+            _refreshTimer.Start();
+        };
+    }
+
+    private void RebuildAppCards()
+    {
+        _apps = LaForgeAppRegistry.DiscoverRememberedApps(_baseDir);
+        _appsFlowPanel.SuspendLayout();
+        _appsFlowPanel.Controls.Clear();
+        _cardsByPackage.Clear();
+
+        foreach (var app in _apps)
+        {
+            var card = CreateAppCard(app);
+            _cardsByPackage[app.PackageName] = card;
+            _appsFlowPanel.Controls.Add(card.CardPanel);
+        }
+
+        _appsFlowPanel.ResumeLayout();
+    }
+
+    private AppCardControls CreateAppCard(AppPolicyConfig app)
+    {
+        var panel = new Panel
+        {
+            Width = 995,
+            Height = 82,
+            BackColor = Color.FromArgb(24, 28, 38),
+            Margin = new Padding(0, 0, 0, 10),
+            Padding = new Padding(12)
+        };
+
+        var iconBox = new PictureBox
+        {
+            Size = new Size(52, 52),
+            Location = new Point(14, 15),
+            SizeMode = PictureBoxSizeMode.Zoom,
+            BackColor = Color.Transparent
+        };
+        LoadCardIcon(iconBox, app);
+
+        var lblTitle = new Label
+        {
+            Text = string.IsNullOrWhiteSpace(app.AppTitle) ? app.PackageName : app.AppTitle,
+            Font = new Font("Segoe UI Semibold", 12F, FontStyle.Bold),
+            ForeColor = Color.White,
+            AutoSize = true,
+            Location = new Point(80, 12)
+        };
+
+        var lblPkg = new Label
+        {
+            Text = $"{app.PackageName}   •   {Path.GetFileName(LaForgeAppRegistry.GetConfFilePath(app.PackageName))}",
+            Font = new Font("Consolas", 8.5F, FontStyle.Regular),
+            ForeColor = Color.FromArgb(145, 160, 180),
+            AutoSize = true,
+            Location = new Point(82, 38)
+        };
+
+        var lblPolicy = new Label
+        {
+            Text = FormatPolicySummary(app),
+            Font = new Font("Segoe UI Semibold", 8.5F, FontStyle.Regular),
+            ForeColor = Color.FromArgb(130, 180, 240),
+            AutoSize = true,
+            Location = new Point(82, 56)
+        };
+
+        var statusBadge = CreateBadgeLabel("○ STOPPED", new Point(390, 16), 175, Color.FromArgb(36, 42, 54), Color.FromArgb(165, 175, 190));
+        var audioBadge = CreateBadgeLabel("Idle", new Point(390, 45), 175, Color.FromArgb(30, 35, 46), Color.FromArgb(140, 150, 165));
+        var notifBadge = CreateBadgeLabel("🔔 0", new Point(575, 16), 95, Color.FromArgb(30, 35, 46), Color.FromArgb(160, 170, 185));
+
+        var btnLaunch = CreateButton("▶ Launch / Focus", Color.FromArgb(35, 134, 54), new Point(685, 22), new Size(122, 36));
+        btnLaunch.Click += async (_, _) => await LaunchOrFocusAppAsync(app.PackageName);
+
+        var btnBg = CreateButton("🌙 Background", Color.FromArgb(45, 95, 155), new Point(813, 22), new Size(110, 36));
+        btnBg.Click += async (_, _) => await BackgroundAppAsync(app.PackageName);
+
+        var btnStop = CreateButton("■", Color.FromArgb(135, 48, 52), new Point(929, 22), new Size(28, 36));
+        btnStop.Click += async (_, _) => await StopAppAsync(app.PackageName);
+
+        var btnGear = CreateButton("⚙", Color.FromArgb(62, 70, 86), new Point(961, 22), new Size(28, 36));
+        btnGear.Click += async (_, _) => await OpenAppConfigModalAsync(app.PackageName);
+
+        panel.Controls.Add(iconBox);
+        panel.Controls.Add(lblTitle);
+        panel.Controls.Add(lblPkg);
+        panel.Controls.Add(lblPolicy);
+        panel.Controls.Add(statusBadge);
+        panel.Controls.Add(audioBadge);
+        panel.Controls.Add(notifBadge);
+        panel.Controls.Add(btnLaunch);
+        panel.Controls.Add(btnBg);
+        panel.Controls.Add(btnStop);
+        panel.Controls.Add(btnGear);
+
+        return new AppCardControls
+        {
+            CardPanel = panel,
+            IconBox = iconBox,
+            TitleLabel = lblTitle,
+            PackageLabel = lblPkg,
+            StatusBadge = statusBadge,
+            AudioBadge = audioBadge,
+            NotifBadge = notifBadge,
+            PolicyBadge = lblPolicy,
+            BtnLaunchFocus = btnLaunch,
+            BtnBackground = btnBg,
+            BtnStop = btnStop,
+            BtnGear = btnGear
+        };
+    }
+
+    private async Task RefreshTelemetryAsync()
+    {
+        if (_isRefreshing || IsDisposed) return;
+        _isRefreshing = true;
+
+        try
+        {
+            _apps = LaForgeAppRegistry.DiscoverRememberedApps(_baseDir);
+            if (_apps.Count != _cardsByPackage.Count)
+            {
+                RebuildAppCards();
+            }
+
+            var snapshotApps = _apps.ToList();
+            var telemetry = await Task.Run(() => LaForgeAppRegistry.QueryLiveTelemetry(_adbExe, snapshotApps));
+
+            if (IsDisposed) return;
+
+            int runningCount = 0;
+            int bgCount = 0;
+            int totalNotifs = 0;
+            bool anyBackgroundPlayingAudio = false;
+            bool anyVisualScrcpyOpen = false;
+
+            var allNotifs = new List<AppNotificationItem>();
+
+            foreach (var app in snapshotApps)
+            {
+                if (!_cardsByPackage.TryGetValue(app.PackageName, out var card)) continue;
+                if (!telemetry.TryGetValue(app.PackageName, out var tel)) continue;
+
+                card.PolicyBadge.Text = FormatPolicySummary(app);
+
+                if (tel.ScrcpyProcessId > 0)
+                {
+                    anyVisualScrcpyOpen = true;
+                }
+
+                // 1. Running / Virtual Display / Backgrounded state
+                if (tel.IsRunningOnDisplay)
+                {
+                    runningCount++;
+                    string vdText = tel.VirtualDisplayId > 0 ? $"Display #{tel.VirtualDisplayId}" : $"PID {tel.ScrcpyProcessId}";
+                    card.StatusBadge.Text = $"● RUNNING ({vdText})";
+                    card.StatusBadge.BackColor = Color.FromArgb(22, 68, 42);
+                    card.StatusBadge.ForeColor = Color.FromArgb(126, 231, 135);
+                    card.BtnLaunchFocus.Text = tel.ScrcpyProcessId > 0 ? "🎯 Focus Window" : "▶ Attach Display";
+                    card.BtnBackground.Enabled = tel.ScrcpyProcessId > 0;
+                    card.BtnStop.Enabled = true;
+                }
+                else if (tel.IsBackgrounded)
+                {
+                    bgCount++;
+                    card.StatusBadge.Text = $"◐ BACKGROUND (PID {tel.AndroidPid})";
+                    card.StatusBadge.BackColor = Color.FromArgb(72, 54, 20);
+                    card.StatusBadge.ForeColor = Color.FromArgb(255, 200, 95);
+                    card.BtnLaunchFocus.Text = "▶ Resume Display";
+                    card.BtnBackground.Enabled = false;
+                    card.BtnStop.Enabled = true;
+
+                    if (tel.IsPlayingAudio && !app.MuteAudio)
+                    {
+                        anyBackgroundPlayingAudio = true;
+                    }
+                }
+                else
+                {
+                    card.StatusBadge.Text = "○ STOPPED";
+                    card.StatusBadge.BackColor = Color.FromArgb(34, 39, 50);
+                    card.StatusBadge.ForeColor = Color.FromArgb(150, 160, 175);
+                    card.BtnLaunchFocus.Text = "▶ Launch App";
+                    card.BtnBackground.Enabled = false;
+                    card.BtnStop.Enabled = false;
+                }
+
+                // 2. Audio playback / recording state
+                if (app.MuteAudio && app.MuteMic)
+                {
+                    card.AudioBadge.Text = "🔇 Audio & Mic Muted";
+                    card.AudioBadge.BackColor = Color.FromArgb(68, 30, 34);
+                    card.AudioBadge.ForeColor = Color.FromArgb(255, 140, 140);
+                }
+                else if (tel.IsRecordingAudio)
+                {
+                    card.AudioBadge.Text = "🎙 RECORDING AUDIO";
+                    card.AudioBadge.BackColor = Color.FromArgb(88, 28, 32);
+                    card.AudioBadge.ForeColor = Color.FromArgb(255, 130, 130);
+                }
+                else if (tel.IsPlayingAudio)
+                {
+                    card.AudioBadge.Text = app.MuteAudio ? "🔇 Playing (Muted)" : "🔊 PLAYING AUDIO";
+                    card.AudioBadge.BackColor = Color.FromArgb(20, 62, 75);
+                    card.AudioBadge.ForeColor = Color.FromArgb(105, 230, 255);
+                }
+                else
+                {
+                    card.AudioBadge.Text = app.MuteAudio ? "🔇 Muted" : "Audio: Idle";
+                    card.AudioBadge.BackColor = Color.FromArgb(30, 35, 46);
+                    card.AudioBadge.ForeColor = Color.FromArgb(140, 150, 165);
+                }
+
+                // 3. Notification Counter
+                int nCount = tel.Notifications.Count;
+                totalNotifs += nCount;
+                card.NotifBadge.Text = $"🔔 {nCount} Notif{(nCount == 1 ? "" : "s")}";
+                card.NotifBadge.BackColor = nCount > 0 ? Color.FromArgb(75, 55, 20) : Color.FromArgb(30, 35, 46);
+                card.NotifBadge.ForeColor = nCount > 0 ? Color.FromArgb(255, 205, 95) : Color.FromArgb(150, 160, 175);
+
+                allNotifs.AddRange(tel.Notifications);
+            }
+
+            // Maintain headless audio bridge when a backgrounded app is playing audio and no visual scrcpy window is open
+            if (anyBackgroundPlayingAudio && !anyVisualScrcpyOpen)
+            {
+                EnsureHeadlessAudioBridge();
+            }
+            else if (anyVisualScrcpyOpen)
+            {
+                StopHeadlessAudioBridge();
+            }
+
+            _lblHeaderStats.Text =
+                $"Remembered Apps: {snapshotApps.Count}   |   Active Displays: {runningCount}   |   Backgrounded: {bgCount}   |   Active Notifications: {totalNotifs}   |   Config: %LOCALAPPDATA%\\LaForge\\config";
+
+            UpdateNotificationListView(allNotifs);
+        }
+        finally
+        {
+            _isRefreshing = false;
+        }
+    }
+
+    private void UpdateNotificationListView(List<AppNotificationItem> notifs)
+    {
+        _notifListView.BeginUpdate();
+        _notifListView.Items.Clear();
+        if (notifs.Count == 0)
+        {
+            var emptyItem = new ListViewItem("No active app notifications");
+            emptyItem.SubItems.Add("—");
+            emptyItem.SubItems.Add("Notifications from running or backgrounded LaForge apps appear here automatically.");
+            emptyItem.SubItems.Add("—");
+            emptyItem.ForeColor = Color.FromArgb(130, 140, 155);
+            _notifListView.Items.Add(emptyItem);
+        }
+        else
+        {
+            foreach (var n in notifs)
+            {
+                var item = new ListViewItem(n.AppTitle);
+                item.SubItems.Add(n.Title);
+                item.SubItems.Add(n.Text);
+                item.SubItems.Add(n.Channel);
+                item.ForeColor = Color.FromArgb(255, 215, 130);
+                _notifListView.Items.Add(item);
+            }
+        }
+        _notifListView.EndUpdate();
+    }
+
+    private async Task LaunchOrFocusAppAsync(string packageName)
+    {
+        var app = _apps.FirstOrDefault(a => a.PackageName.Equals(packageName, StringComparison.OrdinalIgnoreCase));
+        if (app == null) return;
+
+        // Check if scrcpy window is already open for this app
+        try
+        {
+            foreach (var p in Process.GetProcessesByName("scrcpy"))
+            {
+                if ((app.LastScrcpyPid > 0 && p.Id == app.LastScrcpyPid) ||
+                    (!string.IsNullOrWhiteSpace(app.AppTitle) && p.MainWindowTitle.Equals(app.AppTitle, StringComparison.OrdinalIgnoreCase)))
+                {
+                    if (p.MainWindowHandle != IntPtr.Zero)
+                    {
+                        ShowWindow(p.MainWindowHandle, SW_RESTORE);
+                        SetForegroundWindow(p.MainWindowHandle);
+                        return;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+
+        StopHeadlessAudioBridge();
+
+        if (!string.IsNullOrWhiteSpace(app.ExecutablePath) && File.Exists(app.ExecutablePath))
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = app.ExecutablePath,
+                WorkingDirectory = Path.GetDirectoryName(app.ExecutablePath) ?? _baseDir,
+                UseShellExecute = true
+            });
+            await Task.Delay(1200);
+            await RefreshTelemetryAsync();
+        }
+    }
+
+    private async Task BackgroundAppAsync(string packageName)
+    {
+        var app = _apps.FirstOrDefault(a => a.PackageName.Equals(packageName, StringComparison.OrdinalIgnoreCase));
+        if (app == null) return;
+
+        // Enable BackgroundOnClose so closing its scrcpy window keeps the Android process alive
+        app.BackgroundOnClose = true;
+        LaForgeAppRegistry.Save(app);
+
+        try
+        {
+            foreach (var p in Process.GetProcessesByName("scrcpy"))
+            {
+                if ((app.LastScrcpyPid > 0 && p.Id == app.LastScrcpyPid) ||
+                    (!string.IsNullOrWhiteSpace(app.AppTitle) && p.MainWindowTitle.Equals(app.AppTitle, StringComparison.OrdinalIgnoreCase)))
+                {
+                    p.Kill();
+                    p.WaitForExit(1500);
+                }
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+
+        await Task.Delay(400);
+        await RefreshTelemetryAsync();
+    }
+
+    private async Task StopAppAsync(string packageName)
+    {
+        var app = _apps.FirstOrDefault(a => a.PackageName.Equals(packageName, StringComparison.OrdinalIgnoreCase));
+        if (app == null) return;
+
+        try
+        {
+            foreach (var p in Process.GetProcessesByName("scrcpy"))
+            {
+                if ((app.LastScrcpyPid > 0 && p.Id == app.LastScrcpyPid) ||
+                    (!string.IsNullOrWhiteSpace(app.AppTitle) && p.MainWindowTitle.Equals(app.AppTitle, StringComparison.OrdinalIgnoreCase)))
+                {
+                    p.Kill();
+                }
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+
+        await Task.Run(() => Program.RunProcessCaptureOutput(_adbExe, new[] { "shell", "am", "force-stop", packageName }, 4000));
+        await RefreshTelemetryAsync();
+    }
+
+    private async Task OpenAppConfigModalAsync(string packageName)
+    {
+        string confPath = LaForgeAppRegistry.GetConfFilePath(packageName);
+        var policy = LaForgeAppRegistry.ParseConfFile(confPath);
+        if (string.IsNullOrWhiteSpace(policy.PackageName))
+        {
+            policy.PackageName = packageName;
+        }
+
+        using var dlg = new Form
+        {
+            Text = $"⚙ App Policy & Configuration — {policy.AppTitle} ({policy.PackageName})",
+            Size = new Size(560, 440),
+            StartPosition = FormStartPosition.CenterParent,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            BackColor = Color.FromArgb(20, 24, 33),
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 9.5F, FontStyle.Regular)
+        };
+
+        var lblPath = new Label
+        {
+            Text = $"Config File: {confPath}",
+            Font = new Font("Consolas", 8.5F, FontStyle.Regular),
+            ForeColor = Color.FromArgb(140, 175, 220),
+            Location = new Point(20, 16),
+            AutoSize = true
+        };
+
+        CheckBox MakeToggle(string label, bool isChecked, int y, Color color)
+        {
+            return new CheckBox
+            {
+                Text = label,
+                Checked = isChecked,
+                Location = new Point(24, y),
+                AutoSize = true,
+                ForeColor = color,
+                Font = new Font("Segoe UI Semibold", 9.5F, FontStyle.Regular),
+                Cursor = Cursors.Hand
+            };
+        }
+
+        var chkVd = MakeToggle("Launch on Isolated Virtual Display (scrcpy --new-display)", policy.VirtualDisplay, 55, Color.FromArgb(126, 231, 135));
+        var chkBg = MakeToggle("Background App When Window Closes (keep running in Android RAM)", policy.BackgroundOnClose, 92, Color.FromArgb(255, 205, 95));
+        var chkNet = MakeToggle("Block Network Access (Per-UID iptables REJECT & netpolicy blacklist)", policy.BlockNetwork, 129, Color.FromArgb(255, 140, 140));
+        var chkAudio = MakeToggle("Mute Audio Output (Android AppOps PLAY_AUDIO ignore)", policy.MuteAudio, 166, Color.FromArgb(255, 166, 87));
+        var chkMic = MakeToggle("Mute Microphone Input (Android AppOps RECORD_AUDIO ignore)", policy.MuteMic, 203, Color.FromArgb(255, 166, 87));
+        var chkHid = MakeToggle("Block HID / Mouse, Keyboard & Device Sensors (--no-control & AppOps)", policy.BlockHid, 240, Color.FromArgb(210, 168, 255));
+        var chkHost = MakeToggle("Enable Shared HOST Folder Mount (%LOCALAPPDATA%\\LaForge\\HOST <-> /sdcard/HOST)", policy.HostShareEnabled, 277, Color.FromArgb(105, 210, 255));
+
+        var btnOpenConfFile = CreateButton("Open .conf in Notepad", Color.FromArgb(50, 58, 75), new Point(24, 335), new Size(175, 38));
+        btnOpenConfFile.Click += (_, _) =>
+        {
+            LaForgeAppRegistry.Save(policy);
+            Process.Start(new ProcessStartInfo { FileName = "notepad.exe", Arguments = $"\"{confPath}\"", UseShellExecute = true });
+        };
+
+        var btnSave = CreateButton("Save && Apply Live", Color.FromArgb(35, 134, 54), new Point(345, 335), new Size(175, 38));
+        btnSave.Click += (_, _) =>
+        {
+            policy.VirtualDisplay = chkVd.Checked;
+            policy.BackgroundOnClose = chkBg.Checked;
+            policy.BlockNetwork = chkNet.Checked;
+            policy.MuteAudio = chkAudio.Checked;
+            policy.MuteMic = chkMic.Checked;
+            policy.BlockHid = chkHid.Checked;
+            policy.HostShareEnabled = chkHost.Checked;
+            LaForgeAppRegistry.Save(policy);
+            dlg.DialogResult = DialogResult.OK;
+            dlg.Close();
+        };
+
+        dlg.Controls.Add(lblPath);
+        dlg.Controls.Add(chkVd);
+        dlg.Controls.Add(chkBg);
+        dlg.Controls.Add(chkNet);
+        dlg.Controls.Add(chkAudio);
+        dlg.Controls.Add(chkMic);
+        dlg.Controls.Add(chkHid);
+        dlg.Controls.Add(chkHost);
+        dlg.Controls.Add(btnOpenConfFile);
+        dlg.Controls.Add(btnSave);
+
+        if (dlg.ShowDialog(this) == DialogResult.OK)
+        {
+            await Task.Run(() => LaForgeAppRegistry.EnforcePoliciesOnGuest(_adbExe, policy));
+            await RefreshTelemetryAsync();
+        }
+    }
+
+    private void EnsureHeadlessAudioBridge()
+    {
+        try
+        {
+            if (_headlessAudioBridgeProcess != null && !_headlessAudioBridgeProcess.HasExited)
+            {
+                return;
+            }
+            if (!File.Exists(_scrcpyExe)) return;
+
+            _headlessAudioBridgeProcess = Program.StartBackgroundProcess(
+                _scrcpyExe,
+                new[] { "--no-video", "--no-window", "--no-cleanup" },
+                hidden: true);
+        }
+        catch
+        {
+            // Ignore
+        }
+    }
+
+    private void StopHeadlessAudioBridge()
+    {
+        try
+        {
+            if (_headlessAudioBridgeProcess != null && !_headlessAudioBridgeProcess.HasExited)
+            {
+                _headlessAudioBridgeProcess.Kill();
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+        _headlessAudioBridgeProcess = null;
+    }
+
+    private static void LoadCardIcon(PictureBox box, AppPolicyConfig app)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(app.BundleDir))
+            {
+                string pngPath = Path.Combine(app.BundleDir, "bridge", "scrcpy.png");
+                if (File.Exists(pngPath))
+                {
+                    using var fs = new FileStream(pngPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    box.Image = Image.FromStream(fs);
+                    return;
+                }
+            }
+            if (!string.IsNullOrWhiteSpace(app.IconPath) && File.Exists(app.IconPath))
+            {
+                using var ico = new Icon(app.IconPath, new Size(48, 48));
+                box.Image = ico.ToBitmap();
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+    }
+
+    private static string FormatPolicySummary(AppPolicyConfig app)
+    {
+        var tags = new List<string>
+        {
+            app.VirtualDisplay ? "🖥 Virtual Display" : "🖥 Primary Display",
+            app.BackgroundOnClose ? "🌙 Close->Background" : "✕ Close->Exit"
+        };
+        if (app.BlockNetwork) tags.Add("🚫 Net Blocked");
+        if (app.MuteAudio) tags.Add("🔇 Audio Muted");
+        if (app.MuteMic) tags.Add("🎙 Mic Muted");
+        if (app.BlockHid) tags.Add("🔒 HID Locked");
+        if (app.HostShareEnabled) tags.Add("📁 HOST Share");
+        return string.Join("   |   ", tags);
+    }
+
+    private static Label CreateBadgeLabel(string text, Point location, int width, Color backColor, Color foreColor)
+    {
+        return new Label
+        {
+            Text = text,
+            Location = location,
+            Size = new Size(width, 24),
+            BackColor = backColor,
+            ForeColor = foreColor,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Segoe UI Semibold", 8.5F, FontStyle.Bold)
+        };
+    }
+
+    private static Button CreateButton(string text, Color backColor, Point? location = null, Size? size = null)
+    {
+        var btn = new Button
+        {
+            Text = text,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = backColor,
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold),
+            Cursor = Cursors.Hand,
+            Margin = new Padding(4, 0, 4, 0)
+        };
+        btn.FlatAppearance.BorderSize = 0;
+        if (location.HasValue) btn.Location = location.Value;
+        if (size.HasValue)
+        {
+            btn.Size = size.Value;
+        }
+        else
+        {
+            btn.AutoSize = true;
+            btn.Height = 34;
+            btn.Padding = new Padding(8, 2, 8, 2);
+        }
+        return btn;
+    }
+
+    private static void OpenFolderInExplorer(string folderPath)
+    {
+        Directory.CreateDirectory(folderPath);
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = "explorer.exe",
+            Arguments = $"\"{folderPath}\"",
+            UseShellExecute = true
+        });
+    }
+
+    private void ShowAndActivate()
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(ShowAndActivate);
+            return;
+        }
+        ShowInTaskbar = true;
+        Show();
+        WindowState = FormWindowState.Normal;
+        Activate();
+    }
+
+    private void ExitService()
+    {
+        _allowExit = true;
+        Close();
+    }
+}

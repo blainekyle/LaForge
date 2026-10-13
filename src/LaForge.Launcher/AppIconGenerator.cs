@@ -15,17 +15,21 @@ public static class AppIconGenerator
     {
         string icoPath = Path.Combine(bundleDir, "app.ico");
         string pngPath = Path.Combine(bundleDir, "bridge", "scrcpy.png");
+        EnsureAppIcons(packageName, appSlug, icoPath, pngPath);
+        return (icoPath, pngPath);
+    }
 
+    public static void EnsureAppIcons(string packageName, string appSlug, string icoPath, string pngPath)
+    {
         using var bmp = RenderAppIconBitmap(packageName, appSlug, 256);
 
-        // 1. Save bridge/scrcpy.png so scrcpy uses it as the native window/taskbar icon
+        // 1. Save PNG icon
         Directory.CreateDirectory(Path.GetDirectoryName(pngPath)!);
         bmp.Save(pngPath, ImageFormat.Png);
 
-        // 2. Save app.ico (Windows Vista+ PNG-encoded ICO format)
+        // 2. Save Windows Vista+ PNG-encoded .ICO
+        Directory.CreateDirectory(Path.GetDirectoryName(icoPath)!);
         SaveBitmapAsIco(bmp, icoPath);
-
-        return (icoPath, pngPath);
     }
 
     private static Bitmap RenderAppIconBitmap(string packageName, string appSlug, int size)
