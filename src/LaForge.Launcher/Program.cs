@@ -435,10 +435,28 @@ public static class Program
             RunProcessCaptureOutput(adbExe, new[] { "shell", "wm", "density", "160" }, 5000);
             RunProcessCaptureOutput(adbExe, new[] { "shell", "wm", "dismiss-keyguard" }, 5000);
             RunProcessCaptureOutput(adbExe, new[] { "shell", "cmd", "statusbar", "collapse" }, 5000);
+            RunProcessCaptureOutput(
+                adbExe,
+                new[]
+                {
+                    "shell", "cmd", "statusbar", "send-disable-flag",
+                    "statusbar-expansion", "home", "recents", "notification-peek",
+                    "system-icons", "clock", "notification-icons", "search"
+                },
+                5000);
+            RunProcessCaptureOutput(
+                adbExe,
+                new[]
+                {
+                    "shell", "settings", "put", "secure", "icon_blacklist",
+                    "wifi,mobile,battery,airplane,bluetooth,alarm_clock,volume,zen,managed_profile,cast,hotspot,location,rotate,headset"
+                },
+                5000);
+            RunProcessCaptureOutput(adbExe, new[] { "emu", "avd", "hostmicon" }, 5000);
         }
         catch
         {
-            // Non-fatal if device doesn't allow wm overrides
+            // Non-fatal if device doesn't allow wm/statusbar overrides
         }
     }
 
@@ -465,6 +483,15 @@ public static class Program
         {
             RunProcessCaptureOutput(adbExe, new[] { "shell", "wm", "dismiss-keyguard" }, 3000);
             RunProcessCaptureOutput(adbExe, new[] { "shell", "cmd", "statusbar", "collapse" }, 3000);
+            RunProcessCaptureOutput(
+                adbExe,
+                new[]
+                {
+                    "shell", "cmd", "statusbar", "send-disable-flag",
+                    "statusbar-expansion", "home", "recents", "notification-peek",
+                    "system-icons", "clock", "notification-icons", "search"
+                },
+                3000);
 
             lastOut = RunProcessCaptureOutput(adbExe, apkArgs, 10000);
             if (lastOut.Contains("Status: ok", StringComparison.OrdinalIgnoreCase) &&
