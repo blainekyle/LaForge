@@ -25,9 +25,9 @@ public sealed class LaForgeWindow : Form
         _configDir = configDir;
         _initialRelayFile = initialRelayFile;
 
-        Text = config.App.Title;
+        Text = $"{config.App.Title} — Control Console";
         StartPosition = FormStartPosition.Manual;
-        Location = new Point(Math.Max(0, config.Display.Window.X), Math.Max(0, config.Display.Window.Y));
+        Location = new Point(Math.Max(0, config.Display.Window.X - 40), Math.Max(0, config.Display.Window.Y - 40));
         ClientSize = new Size(config.Display.Window.Width, config.Display.Window.Height);
         BackColor = Color.FromArgb(18, 20, 26);
         ForeColor = Color.FromArgb(230, 235, 245);
@@ -226,16 +226,14 @@ public sealed class LaForgeWindow : Form
             _lblPayloadStatus.Text = $"Sideload Payload APK\n{(payloadReady ? $"READY ({payloadMb:F1} MB)" : "MISSING")}";
             _lblPayloadStatus.ForeColor = payloadReady ? Color.FromArgb(126, 231, 135) : Color.FromArgb(255, 123, 114);
 
-            // Log configured pipeline commands
             var emuArgs = Program.BuildEmulatorArgs(_config.Runtime);
-            var scrcpyArgs = Program.BuildScrcpyArgs(_config);
+            var scrcpyArgs = Program.BuildScrcpyArgs(_config, forExecution: true);
             var apkArgs = Program.BuildApkLaunchArgs(_config.App);
 
             AppendLog($"[Step 1/4] Headless Emulator Command: {emulatorExe} {string.Join(' ', emuArgs)}");
             AppendLog($"[Step 2/4] Display Bridge Command   : {scrcpyExe} {string.Join(' ', scrcpyArgs)}");
             AppendLog($"[Step 3/4] Target APK Launch Command: {adbExe} {string.Join(' ', apkArgs)}");
 
-            // Check if an ADB device is already attached
             string attachedDevice = await Task.Run(() => Program.GetConnectedAdbDevice(adbExe));
             if (string.IsNullOrEmpty(attachedDevice) && File.Exists(emulatorExe))
             {
@@ -255,24 +253,29 @@ public sealed class LaForgeWindow : Form
             {
                 _lblRuntimeStatus.Text = $"Android Guest Runtime\nONLINE ({attachedDevice})";
                 _lblRuntimeStatus.ForeColor = Color.FromArgb(126, 231, 135);
-                AppendLog($"Connected to Android runtime device: {attachedDevice}");
+                AppendLog($"Connected to Android runtime device: {attachedDevice}. Verifying User 0 unlock state...");
+
+                await Task.Run(() => Program.WaitForDeviceBoot(adbExe, _config.Runtime.BootTimeoutSec));
+
+                AppendLog($"Configuring guest display geometry ({_config.Display.Window.Width}x{_config.Display.Window.Height} @ 160 dpi)...");
+                await Task.Run(() => Program.ConfigureGuestDisplay(adbExe, _config.Display.Window));
 
                 if (payloadReady)
                 {
-                    AppendLog($"Sideloading {Path.GetFileName(payloadApk)} via 'adb install -r'...");
-                    await Task.Run(() => Program.RunCheckedProcess(adbExe, new[] { "install", "-r", payloadApk }));
-                    AppendLog("APK sideload complete.");
+                    AppendLog($"Sideloading {Path.GetFileName(payloadApk)} via 'adb install -r -g'...");
+                    await Task.Run(() => Program.SideloadAndGrantPermissions(adbExe, payloadApk, _config.App.PackageName));
+                    AppendLog("APK sideload & storage permissions complete.");
                 }
+
+                AppendLog($"Starting {_config.App.PackageName}/{_config.App.ActivityName}...");
+                string startResult = await Task.Run(() => Program.LaunchApkWithRetry(adbExe, _config.App, 15));
+                AppendLog($"Target APK launched: {startResult}");
 
                 if (scrcpyReady)
                 {
                     AppendLog("Attaching scrcpy SDL3/Direct3D display bridge...");
-                    Program.StartBackgroundProcess(scrcpyExe, scrcpyArgs, hidden: false);
+                    Program.EnsureSingleScrcpyInstance(scrcpyExe, scrcpyArgs);
                 }
-
-                AppendLog($"Starting {_config.App.PackageName}/{_config.App.ActivityName}...");
-                await Task.Run(() => Program.RunCheckedProcess(adbExe, apkArgs));
-                AppendLog("Target APK launched in Android runtime.");
 
                 if (!string.IsNullOrWhiteSpace(relayFile))
                 {
@@ -290,7 +293,6 @@ public sealed class LaForgeWindow : Form
                 AppendLog("To run the APK live:", Color.FromArgb(230, 235, 245));
                 AppendLog("  1. Click 'Provision Headless Android SDK Runtime' below to download the Android x86_64 emulator image, OR", Color.FromArgb(230, 235, 245));
                 AppendLog("  2. Connect any Android device/emulator via ADB and click 'Boot Runtime & Attach scrcpy'.", Color.FromArgb(230, 235, 245));
-                AppendLog("  3. You can also test/preview file-association relays right now via 'Test File Association Relay...' or drag-and-drop.", Color.FromArgb(230, 235, 245));
 
                 if (!string.IsNullOrWhiteSpace(relayFile) && File.Exists(relayFile))
                 {

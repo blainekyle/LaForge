@@ -82,11 +82,11 @@ public static class ApkPackager
                 RenderDriver = "direct3d",
                 Window = new WindowConfig
                 {
-                    X = 100,
-                    Y = 100,
+                    X = 140,
+                    Y = 140,
                     Width = 1280,
                     Height = 720,
-                    Borderless = true,
+                    Borderless = false,
                     AlwaysOnTop = false,
                     Fullscreen = false
                 },

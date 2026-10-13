@@ -270,19 +270,24 @@ public static class Program
                 Console.WriteLine($"  Command: {config.Runtime.EmulatorPath} {string.Join(' ', emuArgs)}");
                 if (!dryRun)
                 {
-                    StartBackgroundProcess(emulatorExe, emuArgs, hidden: true);
+                    if (string.IsNullOrEmpty(GetConnectedAdbDevice(adbExe)))
+                    {
+                        StartBackgroundProcess(emulatorExe, emuArgs, hidden: true);
+                    }
                     WaitForDeviceBoot(adbExe, config.Runtime.BootTimeoutSec);
+                    ConfigureGuestDisplay(adbExe, config.Display.Window);
                 }
 
                 // Step 2: Initialize display bridge (scrcpy + SDL2/Direct3D)
-                var scrcpyArgs = BuildScrcpyArgs(config);
+                var scrcpyArgsDisplay = BuildScrcpyArgs(config, forExecution: false);
+                var scrcpyArgsExec = BuildScrcpyArgs(config, forExecution: true);
                 var win = config.Display.Window;
                 Console.WriteLine($"[LaForge] Step 2/4: Initializing Display Bridge (scrcpy + SDL2/Direct3D)...");
                 Console.WriteLine($"  Window Boundaries: X={win.X}, Y={win.Y}, W={win.Width}, H={win.Height}, Borderless={win.Borderless}");
-                Console.WriteLine($"  Command: {config.Display.ScrcpyPath} {string.Join(' ', scrcpyArgs)}");
+                Console.WriteLine($"  Command: {config.Display.ScrcpyPath} {string.Join(' ', scrcpyArgsDisplay)}");
                 if (!dryRun)
                 {
-                    StartBackgroundProcess(scrcpyExe, scrcpyArgs, hidden: false);
+                    EnsureSingleScrcpyInstance(scrcpyExe, scrcpyArgsExec);
                 }
 
                 // Step 3: Sideload payload.apk (if present) and execute target APK via 'adb shell am start'
@@ -296,7 +301,7 @@ public static class Program
                     Console.WriteLine($"  Install Cmd: {config.Runtime.AdbPath} install -r \"{resolvedApkPath}\"");
                     if (!dryRun)
                     {
-                        RunCheckedProcess(adbExe, new[] { "install", "-r", resolvedApkPath });
+                        SideloadAndGrantPermissions(adbExe, resolvedApkPath, config.App.PackageName);
                     }
                 }
 
@@ -305,7 +310,7 @@ public static class Program
                 Console.WriteLine($"  Command: {config.Runtime.AdbPath} {string.Join(' ', apkArgs)}");
                 if (!dryRun)
                 {
-                    RunCheckedProcess(adbExe, apkArgs);
+                    LaunchApkWithRetry(adbExe, config.App, 15);
                 }
             }
 
@@ -398,19 +403,7 @@ public static class Program
         try
         {
             if (!File.Exists(adbExe)) return "";
-            var psi = new ProcessStartInfo
-            {
-                FileName = adbExe,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-            psi.ArgumentList.Add("devices");
-            using var proc = Process.Start(psi);
-            if (proc == null) return "";
-            string output = proc.StandardOutput.ReadToEnd();
-            proc.WaitForExit(5000);
+            string output = RunProcessCaptureOutput(adbExe, new[] { "devices" }, timeoutMs: 8000);
 
             foreach (string rawLine in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
             {
@@ -432,6 +425,82 @@ public static class Program
             // Ignore when adb is unavailable
         }
         return "";
+    }
+
+    public static void ConfigureGuestDisplay(string adbExe, WindowConfig win)
+    {
+        try
+        {
+            RunProcessCaptureOutput(adbExe, new[] { "shell", "wm", "size", $"{win.Width}x{win.Height}" }, 5000);
+            RunProcessCaptureOutput(adbExe, new[] { "shell", "wm", "density", "160" }, 5000);
+            RunProcessCaptureOutput(adbExe, new[] { "shell", "wm", "dismiss-keyguard" }, 5000);
+            RunProcessCaptureOutput(adbExe, new[] { "shell", "cmd", "statusbar", "collapse" }, 5000);
+        }
+        catch
+        {
+            // Non-fatal if device doesn't allow wm overrides
+        }
+    }
+
+    public static void SideloadAndGrantPermissions(string adbExe, string apkPath, string packageName)
+    {
+        RunCheckedProcess(adbExe, new[] { "install", "-r", "-g", apkPath });
+        try
+        {
+            RunProcessCaptureOutput(adbExe, new[] { "shell", "appops", "set", packageName, "MANAGE_EXTERNAL_STORAGE", "allow" }, 5000);
+        }
+        catch
+        {
+            // Ignore if app does not declare MANAGE_EXTERNAL_STORAGE
+        }
+    }
+
+    public static string LaunchApkWithRetry(string adbExe, AppConfig app, int maxWaitSec)
+    {
+        var apkArgs = BuildApkLaunchArgs(app);
+        DateTime deadline = DateTime.UtcNow.AddSeconds(maxWaitSec);
+        string lastOut = "";
+
+        while (DateTime.UtcNow < deadline)
+        {
+            RunProcessCaptureOutput(adbExe, new[] { "shell", "wm", "dismiss-keyguard" }, 3000);
+            RunProcessCaptureOutput(adbExe, new[] { "shell", "cmd", "statusbar", "collapse" }, 3000);
+
+            lastOut = RunProcessCaptureOutput(adbExe, apkArgs, 10000);
+            if (lastOut.Contains("Status: ok", StringComparison.OrdinalIgnoreCase) &&
+                !lastOut.Contains("Error:", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Status: ok";
+            }
+            Thread.Sleep(1500);
+        }
+
+        return string.IsNullOrWhiteSpace(lastOut) ? "Completed" : lastOut.Trim();
+    }
+
+    public static void EnsureSingleScrcpyInstance(string scrcpyExe, IEnumerable<string> scrcpyArgs)
+    {
+        try
+        {
+            foreach (var existing in Process.GetProcessesByName("scrcpy"))
+            {
+                try
+                {
+                    existing.Kill();
+                    existing.WaitForExit(2000);
+                }
+                catch
+                {
+                    // Ignore
+                }
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+
+        StartBackgroundProcess(scrcpyExe, scrcpyArgs, hidden: false);
     }
 
     public static void ValidateWindowBoundaries(WindowConfig win)
@@ -470,20 +539,29 @@ public static class Program
         return list;
     }
 
-    public static List<string> BuildScrcpyArgs(LaForgeConfig cfg)
+    public static List<string> BuildScrcpyArgs(LaForgeConfig cfg, bool forExecution = false)
     {
         var disp = cfg.Display;
         var win = disp.Window;
+        string titleArg = forExecution
+            ? $"--window-title={cfg.App.Title}"
+            : $"--window-title=\"{cfg.App.Title}\"";
+
         var list = new List<string>
         {
-            $"--window-title=\"{cfg.App.Title}\"",
+            titleArg,
             $"--window-x={win.X}",
             $"--window-y={win.Y}",
             $"--window-width={win.Width}",
-            $"--window-height={win.Height}",
-            $"--render-driver={disp.RenderDriver}",
-            $"--max-fps={disp.MaxFps}"
+            $"--window-height={win.Height}"
         };
+
+        if (!forExecution || !disp.RenderDriver.Equals("direct3d", StringComparison.OrdinalIgnoreCase))
+        {
+            list.Add($"--render-driver={disp.RenderDriver}");
+        }
+
+        list.Add($"--max-fps={disp.MaxFps}");
 
         if (win.Borderless)
         {
@@ -566,6 +644,29 @@ public static class Program
         return Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start process: {fileName}");
     }
 
+    public static string RunProcessCaptureOutput(string fileName, IEnumerable<string> args, int timeoutMs = 30000)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = fileName,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+        foreach (string a in args)
+        {
+            psi.ArgumentList.Add(a);
+        }
+        using var proc = Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start process: {fileName}");
+        var outTask = proc.StandardOutput.ReadToEndAsync();
+        var errTask = proc.StandardError.ReadToEndAsync();
+        proc.WaitForExit(timeoutMs);
+        string stdout = outTask.GetAwaiter().GetResult();
+        string stderr = errTask.GetAwaiter().GetResult();
+        return string.IsNullOrWhiteSpace(stdout) ? stderr : stdout;
+    }
+
     public static void RunCheckedProcess(string fileName, IEnumerable<string> args)
     {
         var psi = new ProcessStartInfo
@@ -581,10 +682,12 @@ public static class Program
             psi.ArgumentList.Add(a);
         }
         using var proc = Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start process: {fileName}");
-        proc.WaitForExit();
+        var outTask = proc.StandardOutput.ReadToEndAsync();
+        var errTask = proc.StandardError.ReadToEndAsync();
+        proc.WaitForExit(120000);
         if (proc.ExitCode != 0)
         {
-            string err = proc.StandardError.ReadToEnd();
+            string err = errTask.GetAwaiter().GetResult();
             throw new InvalidOperationException($"{fileName} exited with code {proc.ExitCode}: {err}");
         }
     }
@@ -595,23 +698,13 @@ public static class Program
         DateTime deadline = DateTime.UtcNow.AddSeconds(timeoutSec);
         while (DateTime.UtcNow < deadline)
         {
-            var psi = new ProcessStartInfo
+            string bootOut = RunProcessCaptureOutput(adbPath, new[] { "shell", "getprop", "sys.boot_completed" }, 5000).Trim();
+            if (bootOut == "1")
             {
-                FileName = adbPath,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                CreateNoWindow = true
-            };
-            psi.ArgumentList.Add("shell");
-            psi.ArgumentList.Add("getprop");
-            psi.ArgumentList.Add("sys.boot_completed");
-
-            using var proc = Process.Start(psi);
-            if (proc != null)
-            {
-                string output = proc.StandardOutput.ReadToEnd().Trim();
-                proc.WaitForExit();
-                if (output == "1")
+                // Also verify User 0 has exited FallbackHome ("Phone is starting...")
+                string dumpsys = RunProcessCaptureOutput(adbPath, new[] { "shell", "dumpsys", "activity", "activities" }, 5000);
+                if (!dumpsys.Contains("FallbackHome", StringComparison.OrdinalIgnoreCase) &&
+                    !dumpsys.Contains("com.android.sdksetup", StringComparison.OrdinalIgnoreCase))
                 {
                     return;
                 }
