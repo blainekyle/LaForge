@@ -69,6 +69,15 @@ public static class AppIconGenerator
 
     private static (Color Primary, Color Secondary) PickThemeColors(string packageName)
     {
+        if (packageName.Contains("cromite", StringComparison.OrdinalIgnoreCase) ||
+            packageName.Contains("chrome", StringComparison.OrdinalIgnoreCase))
+        {
+            return (Color.FromArgb(0, 150, 214), Color.FromArgb(14, 78, 150));
+        }
+        if (packageName.Contains("camera", StringComparison.OrdinalIgnoreCase))
+        {
+            return (Color.FromArgb(20, 165, 155), Color.FromArgb(12, 95, 92));
+        }
         if (packageName.Contains("filemanager", StringComparison.OrdinalIgnoreCase))
         {
             return (Color.FromArgb(46, 160, 67), Color.FromArgb(26, 105, 42));
@@ -91,6 +100,8 @@ public static class AppIconGenerator
 
     private static string DeriveInitials(string packageName, string appSlug)
     {
+        if (packageName.Contains("cromite", StringComparison.OrdinalIgnoreCase)) return "CR";
+        if (packageName.Contains("camera", StringComparison.OrdinalIgnoreCase)) return "CA";
         if (packageName.Contains("filemanager", StringComparison.OrdinalIgnoreCase)) return "FM";
         if (packageName.Contains("gallery", StringComparison.OrdinalIgnoreCase)) return "GA";
         if (packageName.Contains("music", StringComparison.OrdinalIgnoreCase)) return "MP";

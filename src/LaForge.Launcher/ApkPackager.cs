@@ -148,7 +148,9 @@ public static class ApkPackager
         string[] parts = packageName.Split('.', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length >= 2)
         {
-            return string.Join(' ', parts.Skip(1).Select(p => char.ToUpperInvariant(p[0]) + p[1..]));
+            return string.Join(' ', parts.Skip(1)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(p => char.ToUpperInvariant(p[0]) + p[1..]));
         }
         return packageName;
     }
