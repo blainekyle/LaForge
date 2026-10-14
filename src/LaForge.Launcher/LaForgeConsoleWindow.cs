@@ -866,7 +866,7 @@ public sealed class LaForgeConsoleWindow : Form
         var chkDynamicResize = new CheckBox
         {
             Text = dynamicResizeLabel,
-            Checked = policy.DynamicAspectResize && policy.IsWindowable,
+            Checked = policy.DynamicAspectResize,
             Location = new Point(14, 138),
             AutoSize = true,
             ForeColor = policy.IsWindowable ? Color.FromArgb(126, 231, 135) : Color.FromArgb(255, 205, 95),
@@ -876,7 +876,7 @@ public sealed class LaForgeConsoleWindow : Form
 
         var lblDynamicHint = new Label
         {
-            Text = "When enabled, dragging the window border to a new aspect ratio dynamically updates the Android\r\nvirtual display density/dimensions (wm size WxH -d <displayId>) after mouse release.",
+            Text = "When enabled, SDL3 aspect-ratio locking (SDL_SetWindowAspectRatio) is bypassed via SCRCPY_FREE_ASPECT=1\r\nand dragging any side/corner handle hot-swaps the virtual display to the new aspect ratio upon mouse release.",
             Font = new Font("Segoe UI", 8F, FontStyle.Regular),
             ForeColor = Color.FromArgb(150, 165, 190),
             Location = new Point(32, 164),
@@ -981,22 +981,7 @@ public sealed class LaForgeConsoleWindow : Form
 
         if (dlg.ShowDialog(this) == DialogResult.OK)
         {
-            await Task.Run(() =>
-            {
-                LaForgeAppRegistry.EnforcePoliciesOnGuest(_adbExe, policy, forceNetworkUpdate: true);
-                if (File.Exists(_adbExe))
-                {
-                    var liveTel = LaForgeAppRegistry.QueryLiveTelemetry(_adbExe, new[] { policy });
-                    if (liveTel.TryGetValue(policy.PackageName, out var tel) && tel.VirtualDisplayId > 0)
-                    {
-                        var (effW, effH) = policy.GetEffectiveScreenSize();
-                        Program.RunProcessCaptureOutput(
-                            _adbExe,
-                            new[] { "shell", $"wm size {effW}x{effH} -d {tel.VirtualDisplayId}" },
-                            timeoutMs: 3000);
-                    }
-                }
-            });
+            await Task.Run(() => LaForgeAppRegistry.EnforcePoliciesOnGuest(_adbExe, policy, forceNetworkUpdate: true));
             await RefreshTelemetryAsync();
         }
     }

@@ -33,6 +33,7 @@ public sealed class LaForgeWindow : Form
     private bool _isCheckingCrossApp;
     private LaForgeAppRegistry.RECT _lastKnownScrcpyBounds;
     private AppPolicyConfig? _activePolicy;
+    private string _lastAppliedScreenSizeOverride = "";
     private int _currentVdWidth = 1280;
     private int _currentVdHeight = 720;
 
@@ -573,7 +574,9 @@ public sealed class LaForgeWindow : Form
                                     liveScrcpyArgs,
                                     scrcpyIconPath,
                                     _config.App.Title,
-                                    appPolicy.LastScrcpyPid);
+                                    appPolicy.LastScrcpyPid,
+                                    freeAspectRatio: appPolicy.DynamicAspectResize,
+                                    killExisting: true);
                                 LaForgeAppRegistry.RecordAppLaunch(_config, _configDir, _activeScrcpyProcess.Id);
                                 _activeScrcpyProcess.EnableRaisingEvents = true;
                                 _activeScrcpyProcess.Exited += OnScrcpyProcessExited;
@@ -672,6 +675,7 @@ public sealed class LaForgeWindow : Form
         if (_allocatedDisplayId <= 0 || string.IsNullOrWhiteSpace(_config.App.PackageName)) return;
 
         _activePolicy = appPolicy;
+        _lastAppliedScreenSizeOverride = appPolicy.ScreenSizeOverride ?? "";
         (_currentVdWidth, _currentVdHeight) = appPolicy.GetEffectiveScreenSize(_config.Display.Window);
 
         if (_activeScrcpyProcess != null && !_activeScrcpyProcess.HasExited)
@@ -705,39 +709,54 @@ public sealed class LaForgeWindow : Form
                 // Continuously record the user's current window size and position while our own app or system chooser is active
                 LaForgeAppRegistry.TryGetWindowBoundsByPid(scrcpyPid, out _lastKnownScrcpyBounds);
 
-                // If the app is window-able and dynamic aspect resizing is enabled, sync virtual display aspect ratio when user finishes resizing the window
-                if ((_activePolicy?.IsWindowable ?? true) &&
-                    (_activePolicy?.DynamicAspectResize ?? true) &&
+                // 1. Check if the user updated ScreenSizeOverride or DynamicAspectResize live via the Console Gear modal
+                string confPath = LaForgeAppRegistry.GetConfFilePath(_config.App.PackageName);
+                if (File.Exists(confPath))
+                {
+                    var latestPolicy = LaForgeAppRegistry.ParseConfFile(confPath);
+                    string latestOverride = latestPolicy.ScreenSizeOverride ?? "";
+                    bool overrideChanged = !string.Equals(latestOverride, _lastAppliedScreenSizeOverride, StringComparison.OrdinalIgnoreCase);
+                    bool dynamicModeChanged = _activePolicy != null && latestPolicy.DynamicAspectResize != _activePolicy.DynamicAspectResize;
+                    _activePolicy = latestPolicy;
+
+                    if (overrideChanged || dynamicModeChanged)
+                    {
+                        _lastAppliedScreenSizeOverride = latestOverride;
+                        var (effW, effH) = latestPolicy.GetEffectiveScreenSize(_config.Display.Window);
+                        if (effW != _currentVdWidth || effH != _currentVdHeight || dynamicModeChanged)
+                        {
+                            await HotSwapVirtualDisplayResolutionAsync(
+                                adbExe,
+                                effW,
+                                effH,
+                                _lastKnownScrcpyBounds.Left,
+                                _lastKnownScrcpyBounds.Top);
+                            return;
+                        }
+                    }
+                }
+
+                // 2. If dynamic aspect resizing is enabled, hot-swap the virtual display to the new aspect ratio once the user releases the mouse button
+                if ((_activePolicy?.DynamicAspectResize ?? true) &&
                     !LaForgeAppRegistry.IsLeftMouseButtonDown() &&
                     LaForgeAppRegistry.TryGetClientBoundsByPid(scrcpyPid, out var clientRect) &&
                     clientRect.Width >= 240 && clientRect.Height >= 240)
                 {
                     double winAspect = (double)clientRect.Width / clientRect.Height;
                     double vdAspect = (double)_currentVdWidth / Math.Max(1, _currentVdHeight);
-                    bool aspectChanged = Math.Abs(winAspect - vdAspect) > 0.06 &&
-                                         (Math.Abs(clientRect.Width - _currentVdWidth) > 24 ||
-                                          Math.Abs(clientRect.Height - _currentVdHeight) > 24);
+                    bool aspectChanged = Math.Abs(winAspect - vdAspect) > 0.05 &&
+                                         (Math.Abs(clientRect.Width - _currentVdWidth) > 20 ||
+                                          Math.Abs(clientRect.Height - _currentVdHeight) > 20);
                     if (aspectChanged)
                     {
                         int newW = AppPolicyConfig.AlignTo8(Math.Clamp(clientRect.Width, 240, 3840));
                         int newH = AppPolicyConfig.AlignTo8(Math.Clamp(clientRect.Height, 240, 2160));
-                        var userOuterBounds = _lastKnownScrcpyBounds;
-                        _currentVdWidth = newW;
-                        _currentVdHeight = newH;
-
-                        await Task.Run(() =>
-                        {
-                            Program.RunProcessCaptureOutput(
-                                adbExe,
-                                new[] { "shell", $"wm size {newW}x{newH} -d {_allocatedDisplayId}" },
-                                2500);
-                        });
-
-                        if (userOuterBounds.Width >= 100 && userOuterBounds.Height >= 100)
-                        {
-                            await Task.Delay(150);
-                            LaForgeAppRegistry.TryRestoreWindowBoundsByPid(scrcpyPid, userOuterBounds);
-                        }
+                        await HotSwapVirtualDisplayResolutionAsync(
+                            adbExe,
+                            newW,
+                            newH,
+                            _lastKnownScrcpyBounds.Left,
+                            _lastKnownScrcpyBounds.Top);
                     }
                 }
                 return;
@@ -790,6 +809,128 @@ public sealed class LaForgeWindow : Form
         finally
         {
             _isCheckingCrossApp = false;
+        }
+    }
+
+    private async Task HotSwapVirtualDisplayResolutionAsync(string adbExe, int newW, int newH, int winX, int winY)
+    {
+        try
+        {
+            string scrcpyExe = Program.ResolveToolPath(_config.Display.ScrcpyPath, _configDir, "scrcpy.exe");
+            if (!File.Exists(scrcpyExe)) return;
+
+            string scrcpyIconPath = Path.Combine(_configDir, "bridge", "scrcpy.png");
+            _currentVdWidth = newW;
+            _currentVdHeight = newH;
+            _config.Display.Window.Width = newW;
+            _config.Display.Window.Height = newH;
+            if (winX >= -1920 && winX <= 7680 && winY >= -1080 && winY <= 4320)
+            {
+                _config.Display.Window.X = Math.Max(0, winX);
+                _config.Display.Window.Y = Math.Max(0, winY);
+            }
+
+            var oldScrcpy = _activeScrcpyProcess;
+            if (oldScrcpy != null)
+            {
+                oldScrcpy.Exited -= OnScrcpyProcessExited;
+            }
+
+            var basePolicy = _activePolicy ?? LaForgeAppRegistry.LoadOrCreate(_config, _configDir);
+            var hotPolicy = new AppPolicyConfig
+            {
+                PackageName = basePolicy.PackageName,
+                AppTitle = basePolicy.AppTitle,
+                ActivityName = basePolicy.ActivityName,
+                ExecutablePath = basePolicy.ExecutablePath,
+                BundleDir = basePolicy.BundleDir,
+                IconPath = basePolicy.IconPath,
+                VirtualDisplay = basePolicy.VirtualDisplay,
+                BackgroundOnClose = basePolicy.BackgroundOnClose,
+                BlockNetwork = basePolicy.BlockNetwork,
+                MuteAudio = basePolicy.MuteAudio,
+                MuteMic = basePolicy.MuteMic,
+                BlockHid = basePolicy.BlockHid,
+                HostShareEnabled = basePolicy.HostShareEnabled,
+                PreferredOrientation = basePolicy.PreferredOrientation,
+                IsWindowable = basePolicy.IsWindowable,
+                PreferredScreenSize = basePolicy.PreferredScreenSize,
+                SupportedScreenSizes = basePolicy.SupportedScreenSizes,
+                ScreenSizeOverride = $"{newW}x{newH}",
+                DynamicAspectResize = basePolicy.DynamicAspectResize
+            };
+
+            AppendLog($"[VirtualDisplay] Hot-swapping virtual display resolution to {newW}x{newH}...", Color.FromArgb(121, 192, 255));
+
+            await Task.Run(() =>
+            {
+                using var vdMutex = new Mutex(false, @"Local\LaForge_VirtualDisplayAllocMutex");
+                bool lockTaken = false;
+                try
+                {
+                    try
+                    {
+                        lockTaken = vdMutex.WaitOne(15000);
+                    }
+                    catch (AbandonedMutexException)
+                    {
+                        lockTaken = true;
+                    }
+
+                    HashSet<int> previousDisplayIds = Program.GetActiveScrcpyDisplayIds(adbExe);
+                    var liveScrcpyArgs = Program.BuildScrcpyArgs(_config, forExecution: true, hotPolicy);
+                    var newScrcpy = Program.EnsureSingleScrcpyInstance(
+                        scrcpyExe,
+                        liveScrcpyArgs,
+                        scrcpyIconPath,
+                        _config.App.Title,
+                        previousPid: 0,
+                        freeAspectRatio: hotPolicy.DynamicAspectResize,
+                        killExisting: false);
+
+                    int newDisplayId = Program.WaitForNewScrcpyDisplayId(adbExe, previousDisplayIds);
+                    if (newDisplayId > 0)
+                    {
+                        Program.BindAppToVirtualDisplay(
+                            adbExe,
+                            _config.App,
+                            newDisplayId,
+                            null,
+                            msg => AppendLog(msg, Color.FromArgb(126, 231, 135)));
+                        _allocatedDisplayId = newDisplayId;
+                    }
+
+                    try
+                    {
+                        if (oldScrcpy != null && !oldScrcpy.HasExited)
+                        {
+                            oldScrcpy.Kill();
+                            oldScrcpy.WaitForExit(1000);
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore old process termination errors
+                    }
+
+                    _activeScrcpyProcess = newScrcpy;
+                    LaForgeAppRegistry.RecordAppLaunch(_config, _configDir, newScrcpy.Id);
+                    newScrcpy.EnableRaisingEvents = true;
+                    newScrcpy.Exited += OnScrcpyProcessExited;
+                    LaForgeAppRegistry.TryGetWindowBoundsByPid(newScrcpy.Id, out _lastKnownScrcpyBounds);
+                }
+                finally
+                {
+                    if (lockTaken)
+                    {
+                        vdMutex.ReleaseMutex();
+                    }
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"[Resize Warning] {ex.Message}", Color.FromArgb(255, 166, 87));
         }
     }
 

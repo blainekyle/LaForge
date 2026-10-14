@@ -293,10 +293,10 @@
       </p>
     </div>
     <div class="lmt-meta-box" id="lmt-meta-version">
-      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v0.7.8-windowing-and-manifest-sizing</span></div>
+      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v0.7.9-free-aspect-and-live-hotswap</span></div>
       <div><strong>Target Runtime:</strong> Android 14 (API 34 x86_64 + WHPX)</div>
       <div><strong>Display Bridge:</strong> scrcpy v5.0.1 + SDL 3.4.18 (D3D11)</div>
-      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-14 13:15 CDT</span></div>
+      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-14 13:52 CDT</span></div>
     </div>
   </header>
 
@@ -500,14 +500,14 @@
         <tr id="lmt-display-window-sizing-config">
           <td><code class="elem-id">lmt-display-window-sizing-config</code></td>
           <td><strong>Manifest Orientation Polling &amp; Per-App Screen Size Override (<code class="inline-code">WxH*</code>)</strong></td>
-          <td><code class="inline-code">ApkManifestParser.cs</code> polls binary <code class="inline-code">AndroidManifest.xml</code> for <code class="inline-code">screenOrientation</code> (<code class="inline-code">portrait</code> &rarr; <code class="inline-code">540x960</code> default for <code class="inline-code">Fossify Camera</code>; <code class="inline-code">landscape</code>/<code class="inline-code">unspecified</code> &rarr; <code class="inline-code">1280x720</code>), <code class="inline-code">resizeableActivity</code> (<code class="inline-code">IsWindowable</code>), and supported sizes. Exposed in <code class="inline-code">.conf</code> (<code class="inline-code">screen_size_override</code>) and Console <code class="inline-code">⚙</code> Gear modal with preset selector + freetext <code class="inline-code">WxH*</code> override and compatibility risk warning.</td>
-          <td><span id="lmt-status-display-window-sizing-config" class="status-badge status-yellow" data-tooltip="Implemented in v0.7.8; Fossify Camera now defaults to 540x960 portrait virtual display and Console Gear modal exposes preset + freetext WxH* override.">◐ Pending Validation</span></td>
+          <td><code class="inline-code">ApkManifestParser.cs</code> polls binary <code class="inline-code">AndroidManifest.xml</code> for <code class="inline-code">screenOrientation</code> (<code class="inline-code">portrait</code> &rarr; <code class="inline-code">540x960</code> default for <code class="inline-code">Fossify Camera</code>; <code class="inline-code">landscape</code>/<code class="inline-code">unspecified</code> &rarr; <code class="inline-code">1280x720</code>), <code class="inline-code">resizeableActivity</code> (<code class="inline-code">IsWindowable</code>), and supported sizes. Exposed in <code class="inline-code">.conf</code> (<code class="inline-code">screen_size_override</code>) and Console <code class="inline-code">⚙</code> Gear modal with preset selector + freetext <code class="inline-code">WxH*</code> override; live changes trigger <code class="inline-code">HotSwapVirtualDisplayResolutionAsync</code> (spawning a fresh <code class="inline-code">--new-display=WxH/160</code> and moving the live Android task via <code class="inline-code">move-stack</code> instead of <code class="inline-code">wm size -d</code>).</td>
+          <td><span id="lmt-status-display-window-sizing-config" class="status-badge status-yellow" data-tooltip="Cold launch config overrides validated by user; v0.7.9 replaces 'wm size -d' (which caused a black screen on Cromite) with live VirtualDisplay hot-swapping (move-stack).">◐ Pending Validation</span></td>
         </tr>
         <tr id="lmt-display-live-aspect-resize">
           <td><code class="elem-id">lmt-display-live-aspect-resize</code></td>
-          <td><strong>Live Multi-Aspect Window Resizing for Window-able Apps</strong></td>
-          <td>For apps declaring <code class="inline-code">resizeableActivity="true"</code> (<code class="inline-code">IsWindowable = true</code>) with <code class="inline-code">dynamic_aspect_resize=true</code>, dragging the window border to a new aspect ratio dynamically updates the Android virtual display (<code class="inline-code">adb shell wm size WxH -d &lt;displayId&gt;</code>) upon mouse release while preserving the user's dragged window position.</td>
-          <td><span id="lmt-status-display-live-aspect-resize" class="status-badge status-yellow" data-tooltip="Implemented in v0.7.8 in LaForgeWindow.CheckCrossAppBreakoutAsync using GetClientRect + GetAsyncKeyState(VK_LBUTTON) + wm size -d.">◐ Pending Validation</span></td>
+          <td><strong>Live Multi-Aspect Window Resizing (<code class="inline-code">SCRCPY_FREE_ASPECT=1</code> + Display Hot-Swap)</strong></td>
+          <td>Patched <code class="inline-code">scrcpy.exe</code>'s <code class="inline-code">SDL_SetWindowAspectRatio</code> import thunk to pass <code class="inline-code">(0.0f, 0.0f)</code> when <code class="inline-code">SCRCPY_FREE_ASPECT=1</code> is set, unlocking SDL3's <code class="inline-code">WM_SIZING</code> aspect-ratio lock so side handles resize width or height independently. Upon mouse release, <code class="inline-code">HotSwapVirtualDisplayResolutionAsync</code> moves the live Android task to a new <code class="inline-code">WxH</code> virtual display at the user's dragged position.</td>
+          <td><span id="lmt-status-display-live-aspect-resize" class="status-badge status-yellow" data-tooltip="v0.7.9 patches scrcpy.exe SDL_SetWindowAspectRatio thunk for SCRCPY_FREE_ASPECT=1 and hot-swaps the virtual display on mouse release.">◐ Pending Validation</span></td>
         </tr>
       </tbody>
     </table>

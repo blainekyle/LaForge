@@ -651,51 +651,60 @@ public static class Program
         IEnumerable<string> scrcpyArgs,
         string? iconPath = null,
         string? appTitle = null,
-        int previousPid = 0)
+        int previousPid = 0,
+        bool freeAspectRatio = false,
+        bool killExisting = true)
     {
-        try
+        if (killExisting)
         {
-            var matchingWinPids = new HashSet<int>();
-            if (!string.IsNullOrWhiteSpace(appTitle))
+            try
             {
-                foreach (var w in LaForgeAppRegistry.FindAllScrcpyWindows())
+                var matchingWinPids = new HashSet<int>();
+                if (!string.IsNullOrWhiteSpace(appTitle))
                 {
-                    if (w.Title.Equals(appTitle, StringComparison.OrdinalIgnoreCase))
+                    foreach (var w in LaForgeAppRegistry.FindAllScrcpyWindows())
                     {
-                        matchingWinPids.Add(w.ProcessId);
+                        if (w.Title.Equals(appTitle, StringComparison.OrdinalIgnoreCase))
+                        {
+                            matchingWinPids.Add(w.ProcessId);
+                        }
                     }
                 }
-            }
 
-            foreach (var existing in Process.GetProcessesByName("scrcpy"))
-            {
-                try
+                foreach (var existing in Process.GetProcessesByName("scrcpy"))
                 {
-                    bool sameApp = (previousPid > 0 && existing.Id == previousPid) ||
-                                   matchingWinPids.Contains(existing.Id) ||
-                                   (!string.IsNullOrWhiteSpace(appTitle) &&
-                                    existing.MainWindowTitle.Equals(appTitle, StringComparison.OrdinalIgnoreCase));
-                    if (sameApp)
+                    try
                     {
-                        existing.Kill();
-                        existing.WaitForExit(1500);
+                        bool sameApp = (previousPid > 0 && existing.Id == previousPid) ||
+                                       matchingWinPids.Contains(existing.Id) ||
+                                       (!string.IsNullOrWhiteSpace(appTitle) &&
+                                        existing.MainWindowTitle.Equals(appTitle, StringComparison.OrdinalIgnoreCase));
+                        if (sameApp)
+                        {
+                            existing.Kill();
+                            existing.WaitForExit(1500);
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore
                     }
                 }
-                catch
-                {
-                    // Ignore
-                }
             }
-        }
-        catch
-        {
-            // Ignore
+            catch
+            {
+                // Ignore
+            }
         }
 
         var envVars = new Dictionary<string, string>();
         if (!string.IsNullOrWhiteSpace(iconPath) && File.Exists(iconPath))
         {
             envVars["SCRCPY_ICON_PATH"] = Path.GetFullPath(iconPath);
+        }
+        if (freeAspectRatio)
+        {
+            envVars["SCRCPY_FREE_ASPECT"] = "1";
         }
 
         return StartBackgroundProcess(scrcpyExe, scrcpyArgs, hidden: false, envVars);
