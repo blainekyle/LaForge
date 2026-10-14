@@ -683,12 +683,82 @@ public static class Program
         {
             list.AddRange(new[] { "-snapshot", rt.Snapshot });
         }
-        list.AddRange(new[] { "-no-boot-anim", "-no-audio" });
+        list.AddRange(new[] { "-no-snapshot-save", "-no-boot-anim", "-no-audio" });
         if (rt.Whpx)
         {
             list.AddRange(new[] { "-feature", "WindowsHypervisorPlatform" });
         }
         return list;
+    }
+
+    public static void StopHeadlessEmulator(string? adbExe = null)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(adbExe) && File.Exists(adbExe))
+            {
+                RunProcessCaptureOutput(adbExe, new[] { "emu", "kill" }, 2000);
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+
+        try
+        {
+            foreach (var proc in Process.GetProcessesByName("qemu-system-x86_64-headless"))
+            {
+                try
+                {
+                    if (!proc.HasExited)
+                    {
+                        proc.Kill(entireProcessTree: true);
+                    }
+                }
+                catch
+                {
+                    // Ignore
+                }
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+    }
+
+    public static void StopEmulatorIfNoActiveSessions(string? adbExe = null, int ignoreScrcpyPid = 0)
+    {
+        try
+        {
+            if (LaForgeAppRegistry.IsConsoleServiceRunning())
+            {
+                return;
+            }
+
+            bool anyOtherScrcpy = Process.GetProcessesByName("scrcpy")
+                .Any(p =>
+                {
+                    try
+                    {
+                        return !p.HasExited && p.Id != ignoreScrcpyPid;
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                });
+
+            if (!anyOtherScrcpy)
+            {
+                StopHeadlessEmulator(adbExe);
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
     }
 
     public static List<string> BuildScrcpyArgs(LaForgeConfig cfg, bool forExecution = false, AppPolicyConfig? policy = null)
@@ -759,8 +829,6 @@ public static class Program
 
         if (forExecution)
         {
-            list.Add("--no-cleanup");
-
             bool useVirtualDisplay = policy?.VirtualDisplay ?? true;
             if (useVirtualDisplay && !string.IsNullOrWhiteSpace(cfg.App.PackageName))
             {
@@ -829,8 +897,8 @@ public static class Program
             return -1;
         }
 
-        // Allow scrcpy.exe 2.4s of uncontended ADB & DisplayManagerService time to push scrcpy-server, init codecs, and create its VirtualDisplay
-        Thread.Sleep(2400);
+        // Allow scrcpy.exe 650ms of uncontended ADB & DisplayManagerService time to push scrcpy-server and create its VirtualDisplay
+        Thread.Sleep(650);
 
         int targetDisplayId = -1;
         DateTime deadline = DateTime.UtcNow.AddSeconds(12);
@@ -844,7 +912,7 @@ public static class Program
                 targetDisplayId = newlyCreated[0];
                 break;
             }
-            Thread.Sleep(450);
+            Thread.Sleep(250);
         }
 
         if (targetDisplayId <= 0)

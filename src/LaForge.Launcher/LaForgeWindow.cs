@@ -240,6 +240,44 @@ public sealed class LaForgeWindow : Form
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
             _hostBridge?.Dispose();
+
+            try
+            {
+                string adbExe = Program.ResolveToolPath(_configDir, _config.Runtime.AdbPath, "adb.exe");
+                int myScrcpyPid = 0;
+                bool keepBackgrounded = false;
+
+                if (!string.IsNullOrWhiteSpace(_config.App.PackageName))
+                {
+                    var latestPolicy = LaForgeAppRegistry.ParseConfFile(LaForgeAppRegistry.GetConfFilePath(_config.App.PackageName));
+                    keepBackgrounded = latestPolicy.BackgroundOnClose;
+                }
+
+                if (_activeScrcpyProcess != null)
+                {
+                    myScrcpyPid = _activeScrcpyProcess.Id;
+                    if (!keepBackgrounded && !_activeScrcpyProcess.HasExited)
+                    {
+                        try
+                        {
+                            _activeScrcpyProcess.Kill();
+                        }
+                        catch
+                        {
+                            // Ignore
+                        }
+                    }
+                }
+
+                if (!keepBackgrounded)
+                {
+                    Program.StopEmulatorIfNoActiveSessions(adbExe, myScrcpyPid);
+                }
+            }
+            catch
+            {
+                // Ignore
+            }
         };
 
         Shown += async (_, _) => await RunSessionPipelineAsync(_initialRelayFile);

@@ -415,6 +415,27 @@ public static class LaForgeAppRegistry
         return list.OrderBy(a => a.AppTitle, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
+    public const string ConsoleServiceEventName = @"Local\LaForge_ConsoleServiceActiveEvent";
+
+    public static bool IsConsoleServiceRunning()
+    {
+        try
+        {
+            if (EventWaitHandle.TryOpenExisting(ConsoleServiceEventName, out var evt))
+            {
+                using (evt)
+                {
+                    return evt.WaitOne(0);
+                }
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+        return false;
+    }
+
     /// <summary>
     /// Enforces per-app policies (Network firewall, Audio PLAY_AUDIO, Mic RECORD_AUDIO, HID/device ops)
     /// inside the running Android container via ADB.
@@ -436,9 +457,11 @@ public static class LaForgeAppRegistry
             string audioMode = policy.MuteAudio ? "ignore" : "allow";
             string micMode = policy.MuteMic ? "ignore" : "allow";
             string hidMode = policy.BlockHid ? "ignore" : "allow";
+            string storageMode = policy.HostShareEnabled ? "allow" : "default";
 
-            // 1. Batch Audio, Mic, and HID/Sensor AppOps in a single adb shell call
+            // 1. Batch Audio, Mic, Storage, and HID/Sensor AppOps in a single adb shell call
             string batchedAppOps =
+                $"cmd appops set {pkg} MANAGE_EXTERNAL_STORAGE {storageMode} 2>/dev/null; " +
                 $"cmd appops set {pkg} PLAY_AUDIO {audioMode}; " +
                 $"cmd appops set {pkg} TAKE_AUDIO_FOCUS {audioMode}; " +
                 $"cmd appops set {pkg} RECORD_AUDIO {micMode}; " +

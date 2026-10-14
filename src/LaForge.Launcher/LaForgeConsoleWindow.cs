@@ -27,6 +27,7 @@ public sealed class LaForgeConsoleWindow : Form
     private readonly Dictionary<string, AppCardControls> _cardsByPackage = new(StringComparer.OrdinalIgnoreCase);
     private List<AppPolicyConfig> _apps = new();
     private Process? _headlessAudioBridgeProcess;
+    private EventWaitHandle? _consoleActiveEvent;
     private bool _isRefreshing;
     private bool _allowExit;
 
@@ -51,6 +52,16 @@ public sealed class LaForgeConsoleWindow : Form
         _baseDir = baseDir;
         _adbExe = Program.ResolveToolPath(baseDir, "bridge/adb.exe", "adb.exe");
         _scrcpyExe = Program.ResolveToolPath(baseDir, "bridge/scrcpy.exe", "scrcpy.exe");
+
+        try
+        {
+            _consoleActiveEvent = new EventWaitHandle(true, EventResetMode.ManualReset, LaForgeAppRegistry.ConsoleServiceEventName);
+            _consoleActiveEvent.Set();
+        }
+        catch
+        {
+            // Ignore
+        }
 
         Text = "LaForge Console — Multi-Display App & Notification Manager";
         Size = new Size(1060, 740);
@@ -230,10 +241,46 @@ public sealed class LaForgeConsoleWindow : Form
                 return;
             }
 
+            try
+            {
+                _consoleActiveEvent?.Reset();
+                _consoleActiveEvent?.Dispose();
+                _consoleActiveEvent = null;
+            }
+            catch { }
+
             _refreshTimer?.Stop();
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
             StopHeadlessAudioBridge();
+
+            try
+            {
+                var scrcpyWins = LaForgeAppRegistry.FindAllScrcpyWindows();
+                bool anyVisibleAppWindow = false;
+                foreach (var win in scrcpyWins)
+                {
+                    if (!win.IsVisible)
+                    {
+                        try
+                        {
+                            using var p = Process.GetProcessById((int)win.ProcessId);
+                            p.Kill(entireProcessTree: true);
+                        }
+                        catch { }
+                    }
+                    else
+                    {
+                        anyVisibleAppWindow = true;
+                    }
+                }
+
+                if (!anyVisibleAppWindow)
+                {
+                    Program.StopHeadlessEmulator(_adbExe);
+                }
+            }
+            catch { }
         };
 
         _refreshTimer = new System.Windows.Forms.Timer { Interval = 3500 };
@@ -684,7 +731,7 @@ public sealed class LaForgeConsoleWindow : Form
 
             _headlessAudioBridgeProcess = Program.StartBackgroundProcess(
                 _scrcpyExe,
-                new[] { "--no-video", "--no-window", "--no-cleanup", "--audio-codec=raw" },
+                new[] { "--no-video", "--no-window", "--audio-codec=raw" },
                 hidden: true);
         }
         catch
