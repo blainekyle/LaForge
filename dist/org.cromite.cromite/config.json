@@ -5,7 +5,7 @@
     "icon_path": "./app.ico",
     "apk_path": "./payload.apk",
     "package_name": "org.cromite.cromite",
-    "activity_name": "com.google.android.apps.chrome.Main"
+    "activity_name": "org.chromium.chrome.browser.ChromeTabbedActivity"
   },
   "runtime": {
     "emulator_path": "emulator",

@@ -226,7 +226,11 @@ public static class LaForgeAppRegistry
         }
         if (!string.IsNullOrWhiteSpace(config.App.ActivityName))
         {
-            policy.ActivityName = config.App.ActivityName;
+            policy.ActivityName = ApkManifestParser.ResolveDirectActivity(pkg, config.App.ActivityName);
+        }
+        else if (!string.IsNullOrWhiteSpace(policy.ActivityName))
+        {
+            policy.ActivityName = ApkManifestParser.ResolveDirectActivity(pkg, policy.ActivityName);
         }
 
         string fullBundleDir = Path.GetFullPath(bundleDir);
@@ -334,6 +338,11 @@ public static class LaForgeAppRegistry
             }
         }
 
+        if (!string.IsNullOrWhiteSpace(policy.PackageName) && !string.IsNullOrWhiteSpace(policy.ActivityName))
+        {
+            policy.ActivityName = ApkManifestParser.ResolveDirectActivity(policy.PackageName, policy.ActivityName);
+        }
+
         return policy;
     }
 
@@ -410,7 +419,11 @@ public static class LaForgeAppRegistry
     /// Enforces per-app policies (Network firewall, Audio PLAY_AUDIO, Mic RECORD_AUDIO, HID/device ops)
     /// inside the running Android container via ADB.
     /// </summary>
-    public static void EnforcePoliciesOnGuest(string adbExe, AppPolicyConfig policy, Action<string>? logger = null)
+    public static void EnforcePoliciesOnGuest(
+        string adbExe,
+        AppPolicyConfig policy,
+        Action<string>? logger = null,
+        bool forceNetworkUpdate = false)
     {
         if (string.IsNullOrWhiteSpace(policy.PackageName) || !File.Exists(adbExe))
         {
@@ -420,40 +433,35 @@ public static class LaForgeAppRegistry
         try
         {
             string pkg = policy.PackageName;
-
-            // 1. Audio output muting (PLAY_AUDIO + TAKE_AUDIO_FOCUS)
             string audioMode = policy.MuteAudio ? "ignore" : "allow";
-            Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "cmd", "appops", "set", pkg, "PLAY_AUDIO", audioMode }, 4000);
-            Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "cmd", "appops", "set", pkg, "TAKE_AUDIO_FOCUS", audioMode }, 4000);
-
-            // 2. Microphone input muting (RECORD_AUDIO)
             string micMode = policy.MuteMic ? "ignore" : "allow";
-            Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "cmd", "appops", "set", pkg, "RECORD_AUDIO", micMode }, 4000);
-
-            // 3. HID / Device sensor restrictions (VIBRATE, CAMERA)
             string hidMode = policy.BlockHid ? "ignore" : "allow";
-            Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "cmd", "appops", "set", pkg, "VIBRATE", hidMode }, 4000);
-            Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "cmd", "appops", "set", pkg, "CAMERA", hidMode }, 4000);
 
-            // 4. Per-UID Network blocking via su 0 iptables + netpolicy
-            int uid = LookupPackageUid(adbExe, pkg);
-            if (uid > 0)
+            // 1. Batch Audio, Mic, and HID/Sensor AppOps in a single adb shell call
+            string batchedAppOps =
+                $"cmd appops set {pkg} PLAY_AUDIO {audioMode}; " +
+                $"cmd appops set {pkg} TAKE_AUDIO_FOCUS {audioMode}; " +
+                $"cmd appops set {pkg} RECORD_AUDIO {micMode}; " +
+                $"cmd appops set {pkg} VIBRATE {hidMode}; " +
+                $"cmd appops set {pkg} CAMERA {hidMode}";
+            Program.RunProcessCaptureOutput(adbExe, new[] { "shell", batchedAppOps }, 4000);
+
+            // 2. Per-UID Network blocking via su 0 /system/bin/iptables + netpolicy (only when blocking or explicitly toggled)
+            if (policy.BlockNetwork || forceNetworkUpdate)
             {
-                if (policy.BlockNetwork)
+                int uid = LookupPackageUid(adbExe, pkg);
+                if (uid > 0)
                 {
-                    Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "cmd", "netpolicy", "add", "restrict-background-blacklist", uid.ToString() }, 4000);
-                    Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "su", "0", "sh", "-c",
-                        $"iptables -C OUTPUT -m owner --uid-owner {uid} -j REJECT 2>/dev/null || iptables -I OUTPUT -m owner --uid-owner {uid} -j REJECT" }, 4000);
-                    Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "su", "0", "sh", "-c",
-                        $"ip6tables -C OUTPUT -m owner --uid-owner {uid} -j REJECT 2>/dev/null || ip6tables -I OUTPUT -m owner --uid-owner {uid} -j REJECT" }, 4000);
-                }
-                else
-                {
-                    Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "cmd", "netpolicy", "remove", "restrict-background-blacklist", uid.ToString() }, 4000);
-                    Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "su", "0", "sh", "-c",
-                        $"while iptables -D OUTPUT -m owner --uid-owner {uid} -j REJECT 2>/dev/null; do :; done" }, 4000);
-                    Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "su", "0", "sh", "-c",
-                        $"while ip6tables -D OUTPUT -m owner --uid-owner {uid} -j REJECT 2>/dev/null; do :; done" }, 4000);
+                    string netCmd = policy.BlockNetwork
+                        ? $"cmd netpolicy add restrict-background-blacklist {uid}; " +
+                          $"su 0 /system/bin/iptables -D OUTPUT -m owner --uid-owner {uid} -j REJECT; " +
+                          $"su 0 /system/bin/iptables -I OUTPUT -m owner --uid-owner {uid} -j REJECT; " +
+                          $"su 0 /system/bin/ip6tables -D OUTPUT -m owner --uid-owner {uid} -j REJECT; " +
+                          $"su 0 /system/bin/ip6tables -I OUTPUT -m owner --uid-owner {uid} -j REJECT"
+                        : $"cmd netpolicy remove restrict-background-blacklist {uid}; " +
+                          $"su 0 /system/bin/iptables -D OUTPUT -m owner --uid-owner {uid} -j REJECT; " +
+                          $"su 0 /system/bin/ip6tables -D OUTPUT -m owner --uid-owner {uid} -j REJECT";
+                    Program.RunProcessCaptureOutput(adbExe, new[] { "shell", netCmd }, 4000);
                 }
             }
 
@@ -484,7 +492,7 @@ public static class LaForgeAppRegistry
     }
 
     /// <summary>
-    /// Queries live telemetry across all remembered apps in a fast batch:
+    /// Queries live telemetry across all remembered apps in a single batched ADB shell invocation:
     /// - Active virtual display IDs per package
     /// - Running Android PIDs per package
     /// - Active Windows scrcpy processes per app
@@ -520,15 +528,59 @@ public static class LaForgeAppRegistry
             // Ignore process enumeration errors
         }
 
-        if (string.IsNullOrWhiteSpace(adbExe) || !File.Exists(adbExe) || string.IsNullOrEmpty(Program.GetConnectedAdbDevice(adbExe)))
+        if (string.IsNullOrWhiteSpace(adbExe) || !File.Exists(adbExe))
+        {
+            return result;
+        }
+
+        // Yield if an app is actively allocating a scrcpy VirtualDisplay so we never contend on adbd or DisplayManagerService
+        using (var vdMutex = new Mutex(false, @"Local\LaForge_VirtualDisplayAllocMutex"))
+        {
+            bool lockTaken = false;
+            try
+            {
+                try
+                {
+                    lockTaken = vdMutex.WaitOne(4500);
+                }
+                catch (AbandonedMutexException)
+                {
+                    lockTaken = true;
+                }
+            }
+            finally
+            {
+                if (lockTaken)
+                {
+                    vdMutex.ReleaseMutex();
+                }
+            }
+        }
+
+        if (string.IsNullOrEmpty(Program.GetConnectedAdbDevice(adbExe)))
         {
             return result;
         }
 
         try
         {
-            // 2. Map UIDs & PIDs
-            string uidOut = Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "cmd", "package", "list", "packages", "-U" }, 5000);
+            // 2. Single batched ADB shell call for UIDs, PIDs, Displays/Activities, Audio, and Notifications
+            var pidCmds = apps.Select(a => $"echo \"PID:{a.PackageName}:$(pidof {a.PackageName})\"");
+            string batchedShell =
+                "echo '===LAFORGE_UIDS==='; cmd package list packages -U; " +
+                "echo '===LAFORGE_PIDS==='; " + string.Join("; ", pidCmds) + "; " +
+                "echo '===LAFORGE_ACTIVITIES==='; dumpsys activity activities; " +
+                "echo '===LAFORGE_AUDIO==='; dumpsys audio; " +
+                "echo '===LAFORGE_NOTIFS==='; dumpsys notification --noredact";
+
+            string combinedOut = Program.RunProcessCaptureOutput(adbExe, new[] { "shell", batchedShell }, 7000);
+
+            string uidOut = ExtractSection(combinedOut, "===LAFORGE_UIDS===", "===LAFORGE_PIDS===");
+            string pidOut = ExtractSection(combinedOut, "===LAFORGE_PIDS===", "===LAFORGE_ACTIVITIES===");
+            string actOut = ExtractSection(combinedOut, "===LAFORGE_ACTIVITIES===", "===LAFORGE_AUDIO===");
+            string audioOut = ExtractSection(combinedOut, "===LAFORGE_AUDIO===", "===LAFORGE_NOTIFS===");
+            string notifOut = ExtractSection(combinedOut, "===LAFORGE_NOTIFS===", null);
+
             var uidToPkg = new Dictionary<int, string>();
             foreach (var app in apps)
             {
@@ -538,20 +590,24 @@ public static class LaForgeAppRegistry
                     result[app.PackageName].AndroidUid = uid;
                     uidToPkg[uid] = app.PackageName;
                 }
+            }
 
-                string pidOut = Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "pidof", app.PackageName }, 3000).Trim();
-                if (!string.IsNullOrEmpty(pidOut))
+            foreach (string rawLine in pidOut.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                string line = rawLine.Trim();
+                if (!line.StartsWith("PID:", StringComparison.Ordinal)) continue;
+                string[] parts = line.Split(':');
+                if (parts.Length >= 3 && result.TryGetValue(parts[1], out var tel))
                 {
-                    string firstToken = pidOut.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
-                    if (int.TryParse(firstToken, out int pid))
+                    string firstPid = parts[2].Split(new[] { ' ', '\t', '\r' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+                    if (int.TryParse(firstPid, out int pid))
                     {
-                        result[app.PackageName].AndroidPid = pid;
+                        tel.AndroidPid = pid;
                     }
                 }
             }
 
             // 3. Map Virtual Display IDs from dumpsys activity activities
-            string actOut = Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "dumpsys", "activity", "activities" }, 5000);
             int currentDisplayId = -1;
             foreach (string rawLine in actOut.Split('\n'))
             {
@@ -563,7 +619,9 @@ public static class LaForgeAppRegistry
                     continue;
                 }
 
-                if (currentDisplayId >= 0 && line.Contains("topResumedActivity=", StringComparison.Ordinal))
+                if (currentDisplayId >= 0 &&
+                    (line.Contains("topResumedActivity=", StringComparison.Ordinal) ||
+                     line.Contains("ActivityRecord{", StringComparison.Ordinal)))
                 {
                     foreach (var app in apps)
                     {
@@ -580,7 +638,6 @@ public static class LaForgeAppRegistry
             }
 
             // 4. Audio playback & recording telemetry from dumpsys audio
-            string audioOut = Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "dumpsys", "audio" }, 5000);
             foreach (string rawLine in audioOut.Split('\n'))
             {
                 string line = rawLine.Trim();
@@ -618,7 +675,6 @@ public static class LaForgeAppRegistry
             }
 
             // 5. Active Notifications from dumpsys notification --noredact
-            string notifOut = Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "dumpsys", "notification", "--noredact" }, 6000);
             ParseNotifications(notifOut, apps, result);
         }
         catch
@@ -627,6 +683,19 @@ public static class LaForgeAppRegistry
         }
 
         return result;
+    }
+
+    private static string ExtractSection(string text, string startMarker, string? endMarker)
+    {
+        int startIdx = text.IndexOf(startMarker, StringComparison.Ordinal);
+        if (startIdx < 0) return "";
+        startIdx += startMarker.Length;
+        if (endMarker == null)
+        {
+            return text[startIdx..];
+        }
+        int endIdx = text.IndexOf(endMarker, startIdx, StringComparison.Ordinal);
+        return endIdx < 0 ? text[startIdx..] : text[startIdx..endIdx];
     }
 
     private static void ParseNotifications(

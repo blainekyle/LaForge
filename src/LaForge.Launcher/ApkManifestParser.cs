@@ -217,7 +217,47 @@ public static class ApkManifestParser
             meta.LauncherActivity = firstViewActivity ?? meta.AllActivities.FirstOrDefault() ?? $"{meta.PackageName}.MainActivity";
         }
 
+        // Prefer real UI activity over noHistory trampoline aliases (e.g. SplashActivity.Green or Chrome Main trampoline)
+        // which otherwise launch a new task with FLAG_ACTIVITY_NEW_TASK onto Display #0 and finish on virtual displays.
+        if (meta.LauncherActivity.Contains("SplashActivity", StringComparison.OrdinalIgnoreCase))
+        {
+            string? mainCandidate = meta.AllActivities.FirstOrDefault(a =>
+                a.EndsWith(".MainActivity", StringComparison.OrdinalIgnoreCase) &&
+                !a.Contains("Splash", StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrEmpty(mainCandidate))
+            {
+                meta.LauncherActivity = mainCandidate;
+            }
+        }
+        else if (meta.LauncherActivity.Equals("com.google.android.apps.chrome.Main", StringComparison.OrdinalIgnoreCase) &&
+                 meta.AllActivities.Contains("org.chromium.chrome.browser.ChromeTabbedActivity"))
+        {
+            meta.LauncherActivity = "org.chromium.chrome.browser.ChromeTabbedActivity";
+        }
+
+        meta.LauncherActivity = ResolveDirectActivity(meta.PackageName, meta.LauncherActivity);
         return meta;
+    }
+
+    public static string ResolveDirectActivity(string packageName, string configuredActivity)
+    {
+        if (string.IsNullOrWhiteSpace(configuredActivity))
+        {
+            return configuredActivity;
+        }
+
+        if (configuredActivity.Contains(".activities.SplashActivity", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(packageName))
+        {
+            return $"{packageName}.activities.MainActivity";
+        }
+
+        if (configuredActivity.Equals("com.google.android.apps.chrome.Main", StringComparison.OrdinalIgnoreCase))
+        {
+            return "org.chromium.chrome.browser.ChromeTabbedActivity";
+        }
+
+        return configuredActivity;
     }
 
     private static string NormalizeClassName(string packageName, string className)

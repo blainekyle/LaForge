@@ -236,7 +236,7 @@ public sealed class LaForgeConsoleWindow : Form
             StopHeadlessAudioBridge();
         };
 
-        _refreshTimer = new System.Windows.Forms.Timer { Interval = 2500 };
+        _refreshTimer = new System.Windows.Forms.Timer { Interval = 3500 };
         _refreshTimer.Tick += async (_, _) => await RefreshTelemetryAsync();
 
         Shown += async (_, _) =>
@@ -667,7 +667,7 @@ public sealed class LaForgeConsoleWindow : Form
 
         if (dlg.ShowDialog(this) == DialogResult.OK)
         {
-            await Task.Run(() => LaForgeAppRegistry.EnforcePoliciesOnGuest(_adbExe, policy));
+            await Task.Run(() => LaForgeAppRegistry.EnforcePoliciesOnGuest(_adbExe, policy, forceNetworkUpdate: true));
             await RefreshTelemetryAsync();
         }
     }
@@ -684,7 +684,7 @@ public sealed class LaForgeConsoleWindow : Form
 
             _headlessAudioBridgeProcess = Program.StartBackgroundProcess(
                 _scrcpyExe,
-                new[] { "--no-video", "--no-window", "--no-cleanup" },
+                new[] { "--no-video", "--no-window", "--no-cleanup", "--audio-codec=raw" },
                 hidden: true);
         }
         catch

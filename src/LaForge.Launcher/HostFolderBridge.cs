@@ -66,7 +66,10 @@ public sealed class HostFolderBridge : IDisposable
         if (storage.CreateShortcut && Directory.Exists(bundleOrExeDir))
         {
             string lnkPath = Path.Combine(bundleOrExeDir, "HOST.lnk");
-            CreateWindowsShortcut(lnkPath, hostDir, $"LaForge Shared Host Folder ({storage.GuestMountPath})");
+            if (!File.Exists(lnkPath))
+            {
+                CreateWindowsShortcut(lnkPath, hostDir, $"LaForge Shared Host Folder ({storage.GuestMountPath})");
+            }
         }
 
         return hostDir;

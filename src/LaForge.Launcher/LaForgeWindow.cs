@@ -395,6 +395,7 @@ public sealed class LaForgeWindow : Form
             _lblPayloadStatus.Text = $"Sideload Payload APK\n{(payloadReady ? $"READY ({payloadMb:F1} MB)" : "MISSING")}";
             _lblPayloadStatus.ForeColor = payloadReady ? Color.FromArgb(126, 231, 135) : Color.FromArgb(255, 123, 114);
 
+            _config.App.ActivityName = ApkManifestParser.ResolveDirectActivity(_config.App.PackageName, _config.App.ActivityName);
             AppPolicyConfig appPolicy = LaForgeAppRegistry.LoadOrCreate(_config, _configDir);
             _config.Storage.EnableHostMount = appPolicy.HostShareEnabled;
 
@@ -407,8 +408,10 @@ public sealed class LaForgeWindow : Form
             AppendLog($"[Step 3/4] Target APK Launch Command: {adbExe} {string.Join(' ', apkArgs)}");
 
             string attachedDevice = await Task.Run(() => Program.GetConnectedAdbDevice(adbExe));
+            bool coldBootedEmulator = false;
             if (string.IsNullOrEmpty(attachedDevice) && File.Exists(emulatorExe))
             {
+                coldBootedEmulator = true;
                 AppendLog($"No active ADB device found. Launching headless Android emulator ({emulatorExe})...", Color.FromArgb(210, 153, 34));
                 _lblRuntimeStatus.Text = "Android Guest Runtime\nBOOTING AVD...";
                 _lblRuntimeStatus.ForeColor = Color.FromArgb(210, 153, 34);
@@ -425,62 +428,114 @@ public sealed class LaForgeWindow : Form
             {
                 _lblRuntimeStatus.Text = $"Android Guest Runtime\nONLINE ({attachedDevice})";
                 _lblRuntimeStatus.ForeColor = Color.FromArgb(126, 231, 135);
-                AppendLog($"Connected to Android runtime device: {attachedDevice}. Verifying User 0 unlock state...");
+                AppendLog($"Connected to Android runtime device: {attachedDevice}.");
 
-                await Task.Run(() => Program.WaitForDeviceBoot(adbExe, _config.Runtime.BootTimeoutSec));
-
-                AppendLog($"Configuring guest display geometry ({_config.Display.Window.Width}x{_config.Display.Window.Height} @ 160 dpi) & kiosk statusbar lock...");
-                await Task.Run(() => Program.ConfigureGuestDisplay(adbExe, _config.Display.Window));
-
-                // Initialize Host Folder Bridge (%LOCALAPPDATA%\LaForge\HOST <-> /sdcard/HOST)
-                _hostBridge?.Dispose();
-                _hostBridge = new HostFolderBridge(_config.Storage, adbExe, msg => AppendLog(msg, Color.FromArgb(165, 214, 255)));
-                await Task.Run(() => _hostBridge.Start());
-
-                if (payloadReady)
+                if (coldBootedEmulator)
                 {
-                    AppendLog($"Sideloading {Path.GetFileName(payloadApk)} via 'adb install -r -g'...");
-                    await Task.Run(() => Program.SideloadAndGrantPermissions(adbExe, payloadApk, _config.App.PackageName));
-                    AppendLog("APK sideload & storage permissions complete.");
+                    await Task.Run(() => Program.WaitForDeviceBoot(adbExe, _config.Runtime.BootTimeoutSec));
                 }
-
-                await Task.Run(() => LaForgeAppRegistry.EnforcePoliciesOnGuest(adbExe, appPolicy, msg => AppendLog(msg, Color.FromArgb(210, 168, 255))));
 
                 if (!appPolicy.VirtualDisplay || !scrcpyReady)
                 {
+                    if (payloadReady)
+                    {
+                        AppendLog($"Sideloading {Path.GetFileName(payloadApk)} via 'adb install -r -g'...");
+                        await Task.Run(() => Program.SideloadAndGrantPermissions(adbExe, payloadApk, _config.App.PackageName));
+                    }
                     AppendLog($"Starting {_config.App.PackageName}/{_config.App.ActivityName} on primary display...");
                     string startResult = await Task.Run(() => Program.LaunchApkWithRetry(adbExe, _config.App, 15));
                     AppendLog($"Target APK launched: {startResult}");
-                }
-                else
-                {
-                    AppendLog($"Virtual Display Mode enabled: scrcpy will allocate an isolated 1280x720/160 display for {_config.App.PackageName}.");
-                }
-
-                if (!string.IsNullOrWhiteSpace(relayFile))
-                {
-                    await ExecuteRelayFileAsync(relayFile);
                 }
 
                 if (scrcpyReady)
                 {
                     AppendLog("Attaching scrcpy SDL3/Direct3D virtual display bridge...");
                     string scrcpyIconPath = Path.Combine(_configDir, "bridge", "scrcpy.png");
-                    _activeScrcpyProcess = Program.EnsureSingleScrcpyInstance(
-                        scrcpyExe,
-                        scrcpyArgs,
-                        scrcpyIconPath,
-                        _config.App.Title,
-                        appPolicy.LastScrcpyPid);
-                    LaForgeAppRegistry.RecordAppLaunch(_config, _configDir, _activeScrcpyProcess.Id);
-                    _activeScrcpyProcess.EnableRaisingEvents = true;
-                    _activeScrcpyProcess.Exited += OnScrcpyProcessExited;
+
+                    await Task.Run(() =>
+                    {
+                        int allocatedDisplayId = -1;
+                        using (var vdMutex = new Mutex(false, @"Local\LaForge_VirtualDisplayAllocMutex"))
+                        {
+                            bool lockTaken = false;
+                            try
+                            {
+                                try
+                                {
+                                    lockTaken = vdMutex.WaitOne(15000);
+                                }
+                                catch (AbandonedMutexException)
+                                {
+                                    lockTaken = true;
+                                }
+
+                                HashSet<int> previousDisplayIds = appPolicy.VirtualDisplay
+                                    ? Program.GetActiveScrcpyDisplayIds(adbExe)
+                                    : new HashSet<int>();
+
+                                var liveScrcpyArgs = Program.BuildScrcpyArgs(_config, forExecution: true, appPolicy);
+                                _activeScrcpyProcess = Program.EnsureSingleScrcpyInstance(
+                                    scrcpyExe,
+                                    liveScrcpyArgs,
+                                    scrcpyIconPath,
+                                    _config.App.Title,
+                                    appPolicy.LastScrcpyPid);
+                                LaForgeAppRegistry.RecordAppLaunch(_config, _configDir, _activeScrcpyProcess.Id);
+                                _activeScrcpyProcess.EnableRaisingEvents = true;
+                                _activeScrcpyProcess.Exited += OnScrcpyProcessExited;
+
+                                if (appPolicy.VirtualDisplay && !string.IsNullOrWhiteSpace(_config.App.PackageName))
+                                {
+                                    allocatedDisplayId = Program.WaitForNewScrcpyDisplayId(adbExe, previousDisplayIds);
+                                    Program.BindAppToVirtualDisplay(
+                                        adbExe,
+                                        _config.App,
+                                        allocatedDisplayId,
+                                        payloadReady ? payloadApk : null,
+                                        msg => AppendLog(msg, Color.FromArgb(126, 231, 135)));
+                                }
+                            }
+                            finally
+                            {
+                                if (lockTaken)
+                                {
+                                    vdMutex.ReleaseMutex();
+                                }
+                            }
+                        }
+                    });
+
+                    // Run guest display config, app policy enforcement, and Host Folder Bridge asynchronously after display is bound
+                    _hostBridge?.Dispose();
+                    _hostBridge = new HostFolderBridge(_config.Storage, adbExe, msg => AppendLog(msg, Color.FromArgb(165, 214, 255)));
+                    _ = Task.Run(() =>
+                    {
+                        Program.ConfigureGuestDisplay(adbExe, _config.Display.Window);
+                        LaForgeAppRegistry.EnforcePoliciesOnGuest(adbExe, appPolicy, msg => AppendLog(msg, Color.FromArgb(210, 168, 255)));
+                        _hostBridge.Start();
+                    });
+
+                    if (!string.IsNullOrWhiteSpace(relayFile))
+                    {
+                        await ExecuteRelayFileAsync(relayFile);
+                    }
 
                     if (_config.Display.AutoHideConsole)
                     {
                         AppendLog("Single-Window Mode active: hiding Control Console to System Tray (double-click tray icon to restore).", Color.FromArgb(88, 166, 255));
-                        await Task.Delay(350);
+                        await Task.Delay(250);
                         HideToSystemTray();
+                    }
+                }
+                else
+                {
+                    _hostBridge?.Dispose();
+                    _hostBridge = new HostFolderBridge(_config.Storage, adbExe, msg => AppendLog(msg, Color.FromArgb(165, 214, 255)));
+                    _ = Task.Run(() => _hostBridge.Start());
+
+                    if (!string.IsNullOrWhiteSpace(relayFile))
+                    {
+                        await ExecuteRelayFileAsync(relayFile);
                     }
                 }
             }

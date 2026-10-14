@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 namespace LaForge.Launcher;
@@ -513,28 +514,32 @@ public static class Program
     {
         try
         {
-            RunProcessCaptureOutput(adbExe, new[] { "shell", "wm", "size", $"{win.Width}x{win.Height}" }, 5000);
-            RunProcessCaptureOutput(adbExe, new[] { "shell", "wm", "density", "160" }, 5000);
-            RunProcessCaptureOutput(adbExe, new[] { "shell", "wm", "dismiss-keyguard" }, 5000);
-            RunProcessCaptureOutput(adbExe, new[] { "shell", "cmd", "statusbar", "collapse" }, 5000);
-            RunProcessCaptureOutput(
+            string alreadyConfigured = RunProcessCaptureOutput(
                 adbExe,
-                new[]
-                {
-                    "shell", "cmd", "statusbar", "send-disable-flag",
-                    "statusbar-expansion", "home", "recents", "notification-peek",
-                    "system-icons", "clock", "notification-icons", "search"
-                },
-                5000);
-            RunProcessCaptureOutput(
-                adbExe,
-                new[]
-                {
-                    "shell", "settings", "put", "secure", "icon_blacklist",
-                    "wifi,mobile,battery,airplane,bluetooth,alarm_clock,volume,zen,managed_profile,cast,hotspot,location,rotate,headset"
-                },
-                5000);
-            RunProcessCaptureOutput(adbExe, new[] { "emu", "avd", "hostmicon" }, 5000);
+                new[] { "shell", "getprop", "debug.laforge.display_configured" },
+                3000).Trim();
+
+            if (alreadyConfigured != "1")
+            {
+                string oneTimeCmd =
+                    $"wm size {win.Width}x{win.Height}; " +
+                    "wm density 160; " +
+                    "pm disable-user --user 0 com.android.inputmethod.latin >/dev/null 2>&1; " +
+                    "settings put global window_animation_scale 0; " +
+                    "settings put global transition_animation_scale 0; " +
+                    "settings put global animator_duration_scale 0; " +
+                    "settings put system accelerometer_rotation 0; " +
+                    "settings put secure icon_blacklist wifi,mobile,battery,airplane,bluetooth,alarm_clock,volume,zen,managed_profile,cast,hotspot,location,rotate,headset; " +
+                    "setprop debug.laforge.display_configured 1";
+                RunProcessCaptureOutput(adbExe, new[] { "shell", oneTimeCmd }, 6000);
+                RunProcessCaptureOutput(adbExe, new[] { "emu", "avd", "hostmicon" }, 3000);
+            }
+
+            string kioskLockCmd =
+                "wm dismiss-keyguard; " +
+                "cmd statusbar collapse; " +
+                "cmd statusbar send-disable-flag statusbar-expansion home recents notification-peek system-icons clock notification-icons search";
+            RunProcessCaptureOutput(adbExe, new[] { "shell", kioskLockCmd }, 4000);
         }
         catch
         {
@@ -549,8 +554,11 @@ public static class Program
         {
             try
             {
-                string pmOut = RunProcessCaptureOutput(adbExe, new[] { "shell", "pm", "path", packageName }, 4000).Trim();
-                alreadyInstalled = pmOut.StartsWith("package:", StringComparison.OrdinalIgnoreCase);
+                string pmOut = RunProcessCaptureOutput(
+                    adbExe,
+                    new[] { "shell", $"pm path {packageName}; appops set {packageName} MANAGE_EXTERNAL_STORAGE allow 2>/dev/null" },
+                    10000).Trim();
+                alreadyInstalled = pmOut.Contains("package:", StringComparison.OrdinalIgnoreCase);
             }
             catch
             {
@@ -561,15 +569,14 @@ public static class Program
         if (!alreadyInstalled)
         {
             RunCheckedProcess(adbExe, new[] { "install", "-r", "-g", apkPath });
-        }
-
-        try
-        {
-            RunProcessCaptureOutput(adbExe, new[] { "shell", "appops", "set", packageName, "MANAGE_EXTERNAL_STORAGE", "allow" }, 4000);
-        }
-        catch
-        {
-            // Ignore if app does not declare MANAGE_EXTERNAL_STORAGE
+            try
+            {
+                RunProcessCaptureOutput(adbExe, new[] { "shell", "appops", "set", packageName, "MANAGE_EXTERNAL_STORAGE", "allow" }, 4000);
+            }
+            catch
+            {
+                // Ignore if app does not declare MANAGE_EXTERNAL_STORAGE
+            }
         }
     }
 
@@ -581,25 +588,13 @@ public static class Program
 
         while (DateTime.UtcNow < deadline)
         {
-            RunProcessCaptureOutput(adbExe, new[] { "shell", "wm", "dismiss-keyguard" }, 3000);
-            RunProcessCaptureOutput(adbExe, new[] { "shell", "cmd", "statusbar", "collapse" }, 3000);
-            RunProcessCaptureOutput(
-                adbExe,
-                new[]
-                {
-                    "shell", "cmd", "statusbar", "send-disable-flag",
-                    "statusbar-expansion", "home", "recents", "notification-peek",
-                    "system-icons", "clock", "notification-icons", "search"
-                },
-                3000);
-
             lastOut = RunProcessCaptureOutput(adbExe, apkArgs, 10000);
             if (lastOut.Contains("Status: ok", StringComparison.OrdinalIgnoreCase) &&
                 !lastOut.Contains("Error:", StringComparison.OrdinalIgnoreCase))
             {
                 return "Status: ok";
             }
-            Thread.Sleep(1500);
+            Thread.Sleep(1000);
         }
 
         return string.IsNullOrWhiteSpace(lastOut) ? "Completed" : lastOut.Trim();
@@ -614,11 +609,24 @@ public static class Program
     {
         try
         {
+            var matchingWinPids = new HashSet<int>();
+            if (!string.IsNullOrWhiteSpace(appTitle))
+            {
+                foreach (var w in LaForgeAppRegistry.FindAllScrcpyWindows())
+                {
+                    if (w.Title.Equals(appTitle, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matchingWinPids.Add(w.ProcessId);
+                    }
+                }
+            }
+
             foreach (var existing in Process.GetProcessesByName("scrcpy"))
             {
                 try
                 {
                     bool sameApp = (previousPid > 0 && existing.Id == previousPid) ||
+                                   matchingWinPids.Contains(existing.Id) ||
                                    (!string.IsNullOrWhiteSpace(appTitle) &&
                                     existing.MainWindowTitle.Equals(appTitle, StringComparison.OrdinalIgnoreCase));
                     if (sameApp)
@@ -699,9 +707,10 @@ public static class Program
         {
             try
             {
+                int prevPid = policy?.LastScrcpyPid ?? 0;
                 otherScrcpyCount = Process.GetProcessesByName("scrcpy")
-                    .Count(p => !p.MainWindowTitle.Equals(cfg.App.Title, StringComparison.OrdinalIgnoreCase) &&
-                                p.MainWindowHandle != IntPtr.Zero);
+                    .Count(p => p.Id != prevPid &&
+                                !p.MainWindowTitle.Equals(cfg.App.Title, StringComparison.OrdinalIgnoreCase));
                 if (otherScrcpyCount > 0)
                 {
                     int offset = (otherScrcpyCount % 6) * 38;
@@ -756,15 +765,16 @@ public static class Program
             if (useVirtualDisplay && !string.IsNullOrWhiteSpace(cfg.App.PackageName))
             {
                 list.Add($"--new-display={win.Width}x{win.Height}/160");
-                list.Add($"--start-app={cfg.App.PackageName}");
                 list.Add("--no-vd-system-decorations");
-                list.Add("--no-vd-destroy-content");
-                list.Add("--display-ime-policy=local");
             }
 
             if ((policy?.MuteAudio ?? false) || otherScrcpyCount > 0)
             {
                 list.Add("--no-audio");
+            }
+            else
+            {
+                list.Add("--audio-codec=raw");
             }
 
             if (policy?.BlockHid ?? false)
@@ -776,10 +786,208 @@ public static class Program
         return list;
     }
 
-    public static List<string> BuildApkLaunchArgs(AppConfig app)
+    public static List<string> BuildApkLaunchArgs(AppConfig app, int displayId = -1)
     {
-        string component = $"{app.PackageName}/{app.ActivityName}";
-        return new List<string> { "shell", "am", "start", "-W", "-n", component };
+        string directActivity = ApkManifestParser.ResolveDirectActivity(app.PackageName, app.ActivityName);
+        string component = $"{app.PackageName}/{directActivity}";
+        if (displayId > 0)
+        {
+            return new List<string> { "shell", "am", "start", "--display", displayId.ToString(), "-n", component };
+        }
+        return new List<string> { "shell", "cmd", "activity", "start", "-W", "-n", component };
+    }
+
+    public static HashSet<int> GetActiveScrcpyDisplayIds(string adbExe)
+    {
+        var ids = new HashSet<int>();
+        try
+        {
+            if (!File.Exists(adbExe)) return ids;
+            string dump = RunProcessCaptureOutput(
+                adbExe,
+                new[] { "shell", "dumpsys display | grep scrcpy" },
+                3000);
+            foreach (Match m in Regex.Matches(dump, @"displayId\s+(\d+)", RegexOptions.IgnoreCase))
+            {
+                if (int.TryParse(m.Groups[1].Value, out int id) && id > 0)
+                {
+                    ids.Add(id);
+                }
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+        return ids;
+    }
+
+    public static int WaitForNewScrcpyDisplayId(string adbExe, HashSet<int> previousDisplayIds)
+    {
+        if (!File.Exists(adbExe))
+        {
+            return -1;
+        }
+
+        // Allow scrcpy.exe 2.4s of uncontended ADB & DisplayManagerService time to push scrcpy-server, init codecs, and create its VirtualDisplay
+        Thread.Sleep(2400);
+
+        int targetDisplayId = -1;
+        DateTime deadline = DateTime.UtcNow.AddSeconds(12);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            var currentIds = GetActiveScrcpyDisplayIds(adbExe);
+            var newlyCreated = currentIds.Where(id => !previousDisplayIds.Contains(id)).OrderByDescending(id => id).ToList();
+            if (newlyCreated.Count > 0)
+            {
+                targetDisplayId = newlyCreated[0];
+                break;
+            }
+            Thread.Sleep(450);
+        }
+
+        if (targetDisplayId <= 0)
+        {
+            var fallbackIds = GetActiveScrcpyDisplayIds(adbExe).OrderByDescending(id => id).ToList();
+            if (fallbackIds.Count > 0)
+            {
+                targetDisplayId = fallbackIds[0];
+            }
+        }
+
+        return targetDisplayId;
+    }
+
+    private static List<(int DisplayId, int TaskId)> GetPackageActiveTasks(string adbExe, string packageName)
+    {
+        var tasks = new List<(int DisplayId, int TaskId)>();
+        string actDump = RunProcessCaptureOutput(adbExe, new[] { "shell", "dumpsys", "activity", "activities" }, 4000);
+        int currentDisplay = -1;
+        var seenTasks = new HashSet<int>();
+
+        foreach (string rawLine in actDump.Split('\n'))
+        {
+            string line = rawLine.Trim();
+            if (line.StartsWith("ActivityTaskSupervisor", StringComparison.Ordinal) ||
+                line.StartsWith("Recent tasks:", StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            var dispMatch = Regex.Match(line, @"^Display\s+#(\d+)\b");
+            if (dispMatch.Success && int.TryParse(dispMatch.Groups[1].Value, out int dId))
+            {
+                currentDisplay = dId;
+                continue;
+            }
+
+            if (currentDisplay >= 0 && line.Contains("ActivityRecord{", StringComparison.Ordinal) &&
+                !line.Contains(" f}}", StringComparison.Ordinal) &&
+                line.Contains(packageName + "/", StringComparison.OrdinalIgnoreCase))
+            {
+                var taskMatch = Regex.Match(line, $@"\b{Regex.Escape(packageName)}/[^\s]+\s+t(\d+)\b", RegexOptions.IgnoreCase);
+                if (taskMatch.Success && int.TryParse(taskMatch.Groups[1].Value, out int tId) && tId > 0 && seenTasks.Add(tId))
+                {
+                    tasks.Add((currentDisplay, tId));
+                }
+            }
+        }
+
+        return tasks;
+    }
+
+    public static int BindAppToVirtualDisplay(
+        string adbExe,
+        AppConfig app,
+        int targetDisplayId,
+        string? fallbackApkPath = null,
+        Action<string>? logger = null)
+    {
+        if (string.IsNullOrWhiteSpace(app.PackageName) || !File.Exists(adbExe))
+        {
+            return -1;
+        }
+
+        if (targetDisplayId <= 0)
+        {
+            logger?.Invoke($"[VirtualDisplay] No newly allocated scrcpy display detected; falling back to primary display.");
+            LaunchApkWithRetry(adbExe, app, 10);
+            return -1;
+        }
+
+        // 1. If the app already has an active non-finishing task (e.g., FirstRunActivity or MainActivity), move it directly to targetDisplayId
+        var initialTasks = GetPackageActiveTasks(adbExe, app.PackageName);
+        if (initialTasks.Count > 0)
+        {
+            foreach (var (dId, tId) in initialTasks)
+            {
+                if (dId != targetDisplayId)
+                {
+                    logger?.Invoke($"[VirtualDisplay] Moving existing Task #{tId} ({app.PackageName}) from Display #{dId} -> Display #{targetDisplayId}...");
+                    RunProcessCaptureOutput(
+                        adbExe,
+                        new[] { "shell", "cmd", "activity", "display", "move-stack", tId.ToString(), targetDisplayId.ToString() },
+                        4000);
+                }
+            }
+            logger?.Invoke($"[VirtualDisplay] Confirmed {app.PackageName} active on isolated Display #{targetDisplayId} (Task #{initialTasks[0].TaskId}).");
+            return targetDisplayId;
+        }
+
+        string directActivity = ApkManifestParser.ResolveDirectActivity(app.PackageName, app.ActivityName);
+        var startArgs = BuildApkLaunchArgs(app, targetDisplayId);
+        logger?.Invoke($"[VirtualDisplay] Launching {app.PackageName}/{directActivity} on Display #{targetDisplayId}...");
+        string launchOut = RunProcessCaptureOutput(adbExe, startArgs, 8000);
+
+        if ((launchOut.Contains("does not exist", StringComparison.OrdinalIgnoreCase) ||
+             launchOut.Contains("Unable to resolve", StringComparison.OrdinalIgnoreCase)) &&
+            !string.IsNullOrWhiteSpace(fallbackApkPath) && File.Exists(fallbackApkPath))
+        {
+            logger?.Invoke($"[VirtualDisplay] Package {app.PackageName} not installed yet; sideloading {Path.GetFileName(fallbackApkPath)}...");
+            SideloadAndGrantPermissions(adbExe, fallbackApkPath, app.PackageName);
+            launchOut = RunProcessCaptureOutput(adbExe, startArgs, 8000);
+        }
+
+        // Verify activity placement; if a trampoline or FirstRun redirect routed a task to Display #0, move all tasks to targetDisplayId
+        for (int attempt = 0; attempt < 5; attempt++)
+        {
+            Thread.Sleep(350);
+            var activeTasks = GetPackageActiveTasks(adbExe, app.PackageName);
+            bool anyMoved = false;
+            int confirmedTaskId = -1;
+
+            foreach (var (dId, tId) in activeTasks)
+            {
+                if (dId == targetDisplayId)
+                {
+                    confirmedTaskId = tId;
+                }
+                else
+                {
+                    logger?.Invoke($"[VirtualDisplay] Moving Task #{tId} ({app.PackageName}) from Display #{dId} -> Display #{targetDisplayId}...");
+                    RunProcessCaptureOutput(
+                        adbExe,
+                        new[] { "shell", "cmd", "activity", "display", "move-stack", tId.ToString(), targetDisplayId.ToString() },
+                        4000);
+                    confirmedTaskId = tId;
+                    anyMoved = true;
+                }
+            }
+
+            if (confirmedTaskId > 0 && !anyMoved)
+            {
+                logger?.Invoke($"[VirtualDisplay] Confirmed {app.PackageName} active on isolated Display #{targetDisplayId} (Task #{confirmedTaskId}).");
+                return targetDisplayId;
+            }
+
+            if (activeTasks.Count == 0 && attempt == 2)
+            {
+                RunProcessCaptureOutput(adbExe, startArgs, 6000);
+            }
+        }
+
+        return targetDisplayId;
     }
 
     public static (List<string> PushArgs, List<string> IntentArgs, string RemoteUri, string MimeType) BuildRelayArgs(
@@ -802,7 +1010,8 @@ public static class Program
         string remoteDir = cfg.Relays.RemoteStagingDir.TrimEnd('/');
         string remotePath = $"{remoteDir}/{fileName}";
         string remoteUri = $"file://{remotePath}";
-        string component = $"{cfg.App.PackageName}/{cfg.App.ActivityName}";
+        string directActivity = ApkManifestParser.ResolveDirectActivity(cfg.App.PackageName, cfg.App.ActivityName);
+        string component = $"{cfg.App.PackageName}/{directActivity}";
 
         var pushArgs = new List<string> { "push", fullPath, remotePath };
         var intentArgs = new List<string>
@@ -899,6 +1108,23 @@ public static class Program
 
     public static void WaitForDeviceBoot(string adbPath, int timeoutSec)
     {
+        try
+        {
+            string fastCheck = RunProcessCaptureOutput(
+                adbPath,
+                new[] { "shell", "getprop sys.boot_completed; getprop debug.laforge.display_configured" },
+                3000).Trim();
+            if (fastCheck.StartsWith("1\n1", StringComparison.Ordinal) ||
+                fastCheck.StartsWith("1\r\n1", StringComparison.Ordinal))
+            {
+                return;
+            }
+        }
+        catch
+        {
+            // Fall through to full boot wait
+        }
+
         RunCheckedProcess(adbPath, new[] { "wait-for-device" });
         DateTime deadline = DateTime.UtcNow.AddSeconds(timeoutSec);
         while (DateTime.UtcNow < deadline)

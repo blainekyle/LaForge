@@ -5,7 +5,7 @@
     "icon_path": "./app.ico",
     "apk_path": "./payload.apk",
     "package_name": "org.fossify.musicplayer",
-    "activity_name": "org.fossify.musicplayer.activities.SplashActivity.Green"
+    "activity_name": "org.fossify.musicplayer.activities.MainActivity"
   },
   "runtime": {
     "emulator_path": "emulator",
