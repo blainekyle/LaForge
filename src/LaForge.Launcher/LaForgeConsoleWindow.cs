@@ -190,7 +190,17 @@ public sealed class LaForgeConsoleWindow : Form
         };
         btnDismissNotifs.Click += async (_, _) =>
         {
-            await Task.Run(() => Program.RunProcessCaptureOutput(_adbExe, new[] { "shell", "service", "call", "notification", "1" }, 4000));
+            await Task.Run(() =>
+            {
+                try
+                {
+                    if (File.Exists(_adbExe))
+                    {
+                        Program.RunProcessCaptureOutput(_adbExe, new[] { "shell", "service", "call", "notification", "1" }, 4000);
+                    }
+                }
+                catch { }
+            });
             await RefreshTelemetryAsync();
         };
 
@@ -614,7 +624,7 @@ public sealed class LaForgeConsoleWindow : Form
             if (win != null && win.ProcessId > 0)
             {
                 using var proc = Process.GetProcessById(win.ProcessId);
-                proc.Kill();
+                proc.Kill(entireProcessTree: true);
             }
         }
         catch
@@ -622,7 +632,20 @@ public sealed class LaForgeConsoleWindow : Form
             // Ignore
         }
 
-        await Task.Run(() => Program.RunProcessCaptureOutput(_adbExe, new[] { "shell", "am", "force-stop", packageName }, 4000));
+        await Task.Run(() =>
+        {
+            try
+            {
+                if (File.Exists(_adbExe))
+                {
+                    Program.RunProcessCaptureOutput(_adbExe, new[] { "shell", "am", "force-stop", packageName }, 4000);
+                }
+            }
+            catch
+            {
+                // Ignore if adb or device is not currently reachable
+            }
+        });
         await RefreshTelemetryAsync();
     }
 

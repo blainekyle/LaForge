@@ -314,6 +314,18 @@ public static class Program
                     ShowWindow(consoleWnd, SW_HIDE);
                 }
 
+                string checkApkPath = Path.IsPathRooted(config.App.ApkPath)
+                    ? config.App.ApkPath
+                    : Path.GetFullPath(Path.Combine(configDir, config.App.ApkPath));
+
+                // If launched from the repo root where config.json is the CLI test harness (no payload.apk), open LaForge Console
+                if (!File.Exists(checkApkPath))
+                {
+                    ApplicationConfiguration.Initialize();
+                    Application.Run(new LaForgeConsoleWindow(baseDir));
+                    return 0;
+                }
+
                 // Fast-path: if this app's scrcpy window is already running or backgrounded (SW_HIDE), restore & focus it in 0ms
                 if (string.IsNullOrWhiteSpace(relayFile))
                 {
@@ -441,17 +453,40 @@ public static class Program
             return relToConfig;
         }
 
-        string bridgeLocal = Path.GetFullPath(Path.Combine(configDir, "bridge", fallbackBridgeFileName));
-        if (File.Exists(bridgeLocal))
+        string[] candidates =
         {
-            return bridgeLocal;
+            Path.GetFullPath(Path.Combine(configDir, "bridge", fallbackBridgeFileName)),
+            Path.GetFullPath(Path.Combine(configDir, "..", "bridge", fallbackBridgeFileName)),
+            Path.GetFullPath(Path.Combine(configDir, "..", "..", "bridge", fallbackBridgeFileName)),
+            Path.GetFullPath(Path.Combine(configDir, "..", "..", "..", "bridge", fallbackBridgeFileName)),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "bridge", fallbackBridgeFileName)),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "bridge", fallbackBridgeFileName)),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "bridge", fallbackBridgeFileName))
+        };
+
+        foreach (string c in candidates)
+        {
+            if (File.Exists(c))
+            {
+                return c;
+            }
         }
 
-        string bridgeRoot = Path.GetFullPath(Path.Combine(configDir, "..", "..", "bridge", fallbackBridgeFileName));
-        if (File.Exists(bridgeRoot))
+        try
         {
-            return bridgeRoot;
+            if (Directory.Exists(configDir))
+            {
+                foreach (string subDir in Directory.GetDirectories(configDir))
+                {
+                    string subBridge = Path.Combine(subDir, "bridge", fallbackBridgeFileName);
+                    if (File.Exists(subBridge))
+                    {
+                        return Path.GetFullPath(subBridge);
+                    }
+                }
+            }
         }
+        catch { }
 
         return configuredPath;
     }
@@ -466,7 +501,9 @@ public static class Program
         string[] candidates =
         {
             Path.GetFullPath(Path.Combine(configDir, "runtime", "emulator", "emulator.exe")),
+            Path.GetFullPath(Path.Combine(configDir, "..", "runtime", "emulator", "emulator.exe")),
             Path.GetFullPath(Path.Combine(configDir, "..", "..", "runtime", "emulator", "emulator.exe")),
+            Path.GetFullPath(Path.Combine(configDir, "..", "..", "..", "runtime", "emulator", "emulator.exe")),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Android", "Sdk", "emulator", "emulator.exe")
         };
 

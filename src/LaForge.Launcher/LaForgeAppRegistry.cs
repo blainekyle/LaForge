@@ -400,11 +400,24 @@ public static class LaForgeAppRegistry
             try
             {
                 var p = ParseConfFile(file);
-                if (!string.IsNullOrWhiteSpace(p.PackageName) &&
-                    !p.PackageName.Equals("com.example.placeholder", StringComparison.OrdinalIgnoreCase))
+                if (string.IsNullOrWhiteSpace(p.PackageName) ||
+                    p.PackageName.Equals("com.example.placeholder", StringComparison.OrdinalIgnoreCase))
                 {
-                    list.Add(p);
+                    continue;
                 }
+
+                // Filter out phantom entries created from the root CLI test harness config.json (which has no APK payload)
+                if (!string.IsNullOrWhiteSpace(p.BundleDir) && Directory.Exists(p.BundleDir))
+                {
+                    bool hasApk = Directory.GetFiles(p.BundleDir, "*.apk").Length > 0;
+                    if (!hasApk)
+                    {
+                        try { File.Delete(file); } catch { }
+                        continue;
+                    }
+                }
+
+                list.Add(p);
             }
             catch
             {
