@@ -283,6 +283,23 @@
   </style>
 </head>
 <body>
+<!--
+=== AGENT QUICK REFERENCE (read this instead of the whole file; ~70KB, do NOT dump it into chat) ===
+ID SCHEME: every feature row is <tr id="lmt-<area>-<name>"> and its badge is <span id="lmt-status-<area>-<name>" class="status-badge status-COLOR">.
+  Find a row:   grep -n 'id="lmt-bridge-file-relay-cli"' LaForge_Mission_Tracker.html     (then view ~8 lines from the hit)
+  List all:     grep -o '<tr id="lmt-[^"]*"' LaForge_Mission_Tracker.html
+  Badge colors: grep -o 'id="lmt-status-[^"]*" class="status-badge status-[a-z]*'
+SECTIONS (search "<!-- SECTION N:"):  1 roadmap (lmt-phase-1..8) | 2 runtime (lmt-runtime-*) | 3 display (lmt-display-*)
+  4 packager (lmt-packager-*) | 5 OS/storage bridge (lmt-bridge-*) | 6 Console (lmt-console-*) | 6A GMS/licensing (lmt-gms-*)
+  7 forged bundles (lmt-bundle-*) | 8 defect log (lmt-bug-*)
+STATUS COLORS: green=Validated | yellow=Pending Validation | blue=In Progress/Partial | orange=Not Implemented/Planned | red=Known Broken/Limitation
+UPDATE RECIPE (finishing a feature): in its row AND in the lmt-phase-N roadmap row, swap status-COLOR -> status-green, set badge text to
+  "Validated" (keep the leading emoji from an existing green badge), and rewrite the data-tooltip with date + what was verified.
+  Edit via a python/PowerShell regex keyed on the unique id; never rewrite the whole file.
+POLICY: retail/commercial APKs are deliberately NOT part of the build or tests; do not add them as targets.
+LAST UPDATED: 2026-10-14, v0.8.1 (Phase 6/6A validated). Phase 7 (relay CLI + registry assoc) is next.
+=======================================================================================================
+-->
 
   <header class="lmt-header" id="lmt-header-banner">
     <div class="lmt-title-group">
@@ -373,9 +390,9 @@
         <tr id="lmt-phase-6">
           <td><code class="elem-id">lmt-phase-6</code></td>
           <td><strong>Phase 6</strong><br/><small>(GMS &amp; Licensing)</small></td>
-          <td><code class="inline-code">v0.8.0-gms-licensing-interop</code></td>
+          <td><code class="inline-code">v0.8.1-gms-licensing-interop</code></td>
           <td><strong>GMS &amp; Licensing Interop Subsystem (<code class="inline-code">microG</code> + Custom <code class="inline-code">com.android.vending</code> LVL Stub):</strong> Silent pre-flight ADB push/install pipeline for <code class="inline-code">microG Services Core</code> and a custom headless <code class="inline-code">com.android.vending</code> LVL AIDL stub (<code class="inline-code">ILicensingService</code> hardcoded to return <code class="inline-code">0x0001 NOT_LICENSED</code>), UI exclusion from the user-facing apps list, and the <strong>"microG &amp; Services"</strong> administrative section in <code class="inline-code">LaForge Console</code>.</td>
-          <td><span id="lmt-status-phase-6" class="status-badge status-yellow" data-tooltip="Implemented in v0.8.0 (microG v0.3.17.252432 + compiled com.android.vending LVL stub + Console 'microG &amp; Services' panel); ready for user validation.">◐ Pending Validation</span></td>
+          <td><span id="lmt-status-phase-6" class="status-badge status-green" data-tooltip="All Phase 6A rows live-verified 2026-10-14 (v0.8.1).">● Green — Validated</span></td>
         </tr>
         <tr id="lmt-phase-7">
           <td><code class="elem-id">lmt-phase-7</code></td>
@@ -388,7 +405,7 @@
           <td><code class="elem-id">lmt-phase-8</code></td>
           <td><strong>Phase 8</strong><br/><small>(Final Phase)</small></td>
           <td><code class="inline-code">v1.0.0-planned</code></td>
-          <td><strong>Graphical APK Builder in <code class="inline-code">LaForge Console</code> &amp; Enterprise APK Hardening:</strong> Visual <em>"+ Forge New APK..."</em> wizard inside <code class="inline-code">LaForgeConsole.exe</code> (drag-and-drop APK, extract real APK icons, preview manifest, configure policies/shares, compile bundle) and compatibility testing for complex apps (e.g., Citrix Workspace).</td>
+          <td><strong>Graphical APK Builder in <code class="inline-code">LaForge Console</code> &amp; Enterprise APK Hardening:</strong> Visual <em>"+ Forge New APK..."</em> wizard inside <code class="inline-code">LaForgeConsole.exe</code> (drag-and-drop APK, extract real APK icons, preview manifest, configure policies/shares, compile bundle) and compatibility testing for complex apps.</td>
           <td><span id="lmt-status-phase-8" class="status-badge status-orange" data-tooltip="CLI packager (--forge) is complete, but the graphical '+ Forge New APK...' builder modal inside LaForge Console and enterprise APK validation are planned for Phase 8.">○ Not Implemented</span></td>
         </tr>
       </tbody>
@@ -765,13 +782,6 @@
           <td><code class="inline-code">org.cromite.cromite</code><br/><small><code class="inline-code">org.chromium.chrome.browser.ChromeTabbedActivity</code></small></td>
           <td>Validated network passthrough, web audio streaming, and concurrent audio/media control handoff alongside Fossify Music Player.</td>
           <td><span id="lmt-status-bundle-cromite" class="status-badge status-green" data-tooltip="Validated by user in Steps 582 &amp; 588 (side-by-side web audio and Music Player handoff).">● Validated</span></td>
-        </tr>
-        <tr id="lmt-bundle-citrix">
-          <td><code class="elem-id">lmt-bundle-citrix</code></td>
-          <td><strong>Citrix Workspace (Future Target)</strong><br/><small>Not yet ingested</small></td>
-          <td><code class="inline-code">com.citrix.Receiver</code><br/><small>(Future Phase 7 test target)</small></td>
-          <td>Root CLI test fixture placeholder cleaned up in <code class="inline-code">v0.7.5</code>; actual Citrix APK will be tested in Phase 7 once all core isolation and GMS/WebView requirements are ready.</td>
-          <td><span id="lmt-status-bundle-citrix" class="status-badge status-orange" data-tooltip="Deferred intentionally per user guidance until final product hardening in Phase 7.">○ Not Implemented</span></td>
         </tr>
       </tbody>
     </table>
