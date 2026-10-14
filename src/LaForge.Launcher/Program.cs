@@ -720,7 +720,7 @@ public static class Program
         {
             throw new ArgumentOutOfRangeException(nameof(win.Height), $"Invalid window height ({win.Height}). Must be between 200 and 4320 pixels.");
         }
-        if (win.X < -3840 || win.X > 7680 || win.Y < -2160 || win.Y > 4320)
+        if (win.X < -32767 || win.X > 32767 || win.Y < -32767 || win.Y > 32767)
         {
             throw new ArgumentOutOfRangeException(nameof(win.X), $"Window coordinates ({win.X}, {win.Y}) are out of valid desktop bounds.");
         }
@@ -823,7 +823,11 @@ public static class Program
         }
     }
 
-    public static List<string> BuildScrcpyArgs(LaForgeConfig cfg, bool forExecution = false, AppPolicyConfig? policy = null)
+    public static List<string> BuildScrcpyArgs(
+        LaForgeConfig cfg,
+        bool forExecution = false,
+        AppPolicyConfig? policy = null,
+        bool preserveExactPosition = false)
     {
         var disp = cfg.Display;
         var win = disp.Window;
@@ -835,14 +839,15 @@ public static class Program
         int winY = win.Y;
         int otherScrcpyCount = 0;
 
-        if (forExecution)
+        if (forExecution && !preserveExactPosition)
         {
             try
             {
                 int prevPid = policy?.LastScrcpyPid ?? 0;
-                otherScrcpyCount = Process.GetProcessesByName("scrcpy")
-                    .Count(p => p.Id != prevPid &&
-                                !p.MainWindowTitle.Equals(cfg.App.Title, StringComparison.OrdinalIgnoreCase));
+                otherScrcpyCount = LaForgeAppRegistry.FindAllScrcpyWindows()
+                    .Count(w => w.IsVisible &&
+                                w.ProcessId != prevPid &&
+                                !w.Title.Equals(cfg.App.Title, StringComparison.OrdinalIgnoreCase));
                 if (otherScrcpyCount > 0)
                 {
                     int offset = (otherScrcpyCount % 6) * 38;
@@ -932,7 +937,7 @@ public static class Program
         {
             return new List<string> { "shell", "am", "start", "--display", displayId.ToString(), "-n", component };
         }
-        return new List<string> { "shell", "cmd", "activity", "start", "-W", "-n", component };
+        return new List<string> { "shell", "am", "start", "-W", "-n", component };
     }
 
     public static HashSet<int> GetActiveScrcpyDisplayIds(string adbExe)

@@ -182,6 +182,7 @@ public static class LaForgeAppRegistry
     private const int SW_SHOW = 5;
     private const int SW_RESTORE = 9;
     private const int VK_LBUTTON = 0x01;
+    private const uint SWP_NOSIZE = 0x0001;
     private const uint SWP_NOZORDER = 0x0004;
     private const uint SWP_NOACTIVATE = 0x0010;
 
@@ -213,6 +214,14 @@ public static class LaForgeAppRegistry
         var win = FindAllScrcpyWindows().FirstOrDefault(w => w.ProcessId == scrcpyPid);
         if (win == null || win.Hwnd == IntPtr.Zero) return false;
         return SetWindowPos(win.Hwnd, IntPtr.Zero, rect.Left, rect.Top, rect.Width, rect.Height, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    public static bool TryMoveWindowByPid(int scrcpyPid, int left, int top)
+    {
+        if (scrcpyPid <= 0) return false;
+        var win = FindAllScrcpyWindows().FirstOrDefault(w => w.ProcessId == scrcpyPid);
+        if (win == null || win.Hwnd == IntPtr.Zero) return false;
+        return SetWindowPos(win.Hwnd, IntPtr.Zero, left, top, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     public static List<ScrcpyWindowInfo> FindAllScrcpyWindows()

@@ -749,6 +749,7 @@ public sealed class LaForgeWindow : Form
                                           Math.Abs(clientRect.Height - _currentVdHeight) > 20);
                     if (aspectChanged)
                     {
+                        LaForgeAppRegistry.TryGetWindowBoundsByPid(scrcpyPid, out _lastKnownScrcpyBounds);
                         int newW = AppPolicyConfig.AlignTo8(Math.Clamp(clientRect.Width, 240, 3840));
                         int newH = AppPolicyConfig.AlignTo8(Math.Clamp(clientRect.Height, 240, 2160));
                         await HotSwapVirtualDisplayResolutionAsync(
@@ -756,7 +757,8 @@ public sealed class LaForgeWindow : Form
                             newW,
                             newH,
                             _lastKnownScrcpyBounds.Left,
-                            _lastKnownScrcpyBounds.Top);
+                            _lastKnownScrcpyBounds.Top,
+                            exactOuterBounds: _lastKnownScrcpyBounds);
                     }
                 }
                 return;
@@ -812,7 +814,13 @@ public sealed class LaForgeWindow : Form
         }
     }
 
-    private async Task HotSwapVirtualDisplayResolutionAsync(string adbExe, int newW, int newH, int winX, int winY)
+    private async Task HotSwapVirtualDisplayResolutionAsync(
+        string adbExe,
+        int newW,
+        int newH,
+        int winX,
+        int winY,
+        LaForgeAppRegistry.RECT? exactOuterBounds = null)
     {
         try
         {
@@ -824,10 +832,10 @@ public sealed class LaForgeWindow : Form
             _currentVdHeight = newH;
             _config.Display.Window.Width = newW;
             _config.Display.Window.Height = newH;
-            if (winX >= -1920 && winX <= 7680 && winY >= -1080 && winY <= 4320)
+            if (winX >= -32767 && winX <= 32767 && winY >= -32767 && winY <= 32767)
             {
-                _config.Display.Window.X = Math.Max(0, winX);
-                _config.Display.Window.Y = Math.Max(0, winY);
+                _config.Display.Window.X = winX;
+                _config.Display.Window.Y = winY;
             }
 
             var oldScrcpy = _activeScrcpyProcess;
@@ -845,6 +853,7 @@ public sealed class LaForgeWindow : Form
                 ExecutablePath = basePolicy.ExecutablePath,
                 BundleDir = basePolicy.BundleDir,
                 IconPath = basePolicy.IconPath,
+                LastScrcpyPid = oldScrcpy?.Id ?? 0,
                 VirtualDisplay = basePolicy.VirtualDisplay,
                 BackgroundOnClose = basePolicy.BackgroundOnClose,
                 BlockNetwork = basePolicy.BlockNetwork,
@@ -860,7 +869,7 @@ public sealed class LaForgeWindow : Form
                 DynamicAspectResize = basePolicy.DynamicAspectResize
             };
 
-            AppendLog($"[VirtualDisplay] Hot-swapping virtual display resolution to {newW}x{newH}...", Color.FromArgb(121, 192, 255));
+            AppendLog($"[VirtualDisplay] Hot-swapping virtual display resolution to {newW}x{newH} at ({winX}, {winY})...", Color.FromArgb(121, 192, 255));
 
             await Task.Run(() =>
             {
@@ -878,7 +887,7 @@ public sealed class LaForgeWindow : Form
                     }
 
                     HashSet<int> previousDisplayIds = Program.GetActiveScrcpyDisplayIds(adbExe);
-                    var liveScrcpyArgs = Program.BuildScrcpyArgs(_config, forExecution: true, hotPolicy);
+                    var liveScrcpyArgs = Program.BuildScrcpyArgs(_config, forExecution: true, hotPolicy, preserveExactPosition: true);
                     var newScrcpy = Program.EnsureSingleScrcpyInstance(
                         scrcpyExe,
                         liveScrcpyArgs,
@@ -900,6 +909,28 @@ public sealed class LaForgeWindow : Form
                         _allocatedDisplayId = newDisplayId;
                     }
 
+                    void PinWindowToTargetMonitor()
+                    {
+                        if (exactOuterBounds.HasValue && exactOuterBounds.Value.Width >= 100 && exactOuterBounds.Value.Height >= 100)
+                        {
+                            LaForgeAppRegistry.TryRestoreWindowBoundsByPid(newScrcpy.Id, exactOuterBounds.Value);
+                        }
+                        else if (winX >= -32767 && winX <= 32767 && winY >= -32767 && winY <= 32767)
+                        {
+                            LaForgeAppRegistry.TryMoveWindowByPid(newScrcpy.Id, winX, winY);
+                        }
+                    }
+
+                    for (int i = 0; i < 20; i++)
+                    {
+                        if (LaForgeAppRegistry.TryGetWindowBoundsByPid(newScrcpy.Id, out _))
+                        {
+                            PinWindowToTargetMonitor();
+                            break;
+                        }
+                        Thread.Sleep(50);
+                    }
+
                     try
                     {
                         if (oldScrcpy != null && !oldScrcpy.HasExited)
@@ -912,6 +943,10 @@ public sealed class LaForgeWindow : Form
                     {
                         // Ignore old process termination errors
                     }
+
+                    PinWindowToTargetMonitor();
+                    Thread.Sleep(120);
+                    PinWindowToTargetMonitor();
 
                     _activeScrcpyProcess = newScrcpy;
                     LaForgeAppRegistry.RecordAppLaunch(_config, _configDir, newScrcpy.Id);

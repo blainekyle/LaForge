@@ -293,10 +293,10 @@
       </p>
     </div>
     <div class="lmt-meta-box" id="lmt-meta-version">
-      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v0.7.9-free-aspect-and-live-hotswap</span></div>
+      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v0.7.10-multimonitor-resize-pinning</span></div>
       <div><strong>Target Runtime:</strong> Android 14 (API 34 x86_64 + WHPX)</div>
       <div><strong>Display Bridge:</strong> scrcpy v5.0.1 + SDL 3.4.18 (D3D11)</div>
-      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-14 13:52 CDT</span></div>
+      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-14 14:12 CDT</span></div>
     </div>
   </header>
 
@@ -505,9 +505,9 @@
         </tr>
         <tr id="lmt-display-live-aspect-resize">
           <td><code class="elem-id">lmt-display-live-aspect-resize</code></td>
-          <td><strong>Live Multi-Aspect Window Resizing (<code class="inline-code">SCRCPY_FREE_ASPECT=1</code> + Display Hot-Swap)</strong></td>
-          <td>Patched <code class="inline-code">scrcpy.exe</code>'s <code class="inline-code">SDL_SetWindowAspectRatio</code> import thunk to pass <code class="inline-code">(0.0f, 0.0f)</code> when <code class="inline-code">SCRCPY_FREE_ASPECT=1</code> is set, unlocking SDL3's <code class="inline-code">WM_SIZING</code> aspect-ratio lock so side handles resize width or height independently. Upon mouse release, <code class="inline-code">HotSwapVirtualDisplayResolutionAsync</code> moves the live Android task to a new <code class="inline-code">WxH</code> virtual display at the user's dragged position.</td>
-          <td><span id="lmt-status-display-live-aspect-resize" class="status-badge status-yellow" data-tooltip="v0.7.9 patches scrcpy.exe SDL_SetWindowAspectRatio thunk for SCRCPY_FREE_ASPECT=1 and hot-swaps the virtual display on mouse release.">◐ Pending Validation</span></td>
+          <td><strong>Live Multi-Aspect Window Resizing (<code class="inline-code">SCRCPY_FREE_ASPECT=1</code> + Multi-Monitor Display Hot-Swap)</strong></td>
+          <td>Patched <code class="inline-code">scrcpy.exe</code>'s <code class="inline-code">SDL_SetWindowAspectRatio</code> import thunk to pass <code class="inline-code">(0.0f, 0.0f)</code> when <code class="inline-code">SCRCPY_FREE_ASPECT=1</code> is set, unlocking SDL3's <code class="inline-code">WM_SIZING</code> aspect-ratio lock so side handles resize width or height independently (confirmed working by user). Upon mouse release, <code class="inline-code">HotSwapVirtualDisplayResolutionAsync</code> moves the live Android task to a new <code class="inline-code">WxH</code> virtual display and pins the exact outer <code class="inline-code">RECT</code> across negative-coordinate secondary monitors (<code class="inline-code">-32767..32767</code>) via <code class="inline-code">SetWindowPos</code> without <code class="inline-code">Math.Max(0, ...)</code> clamping or <code class="inline-code">+38px</code> cascade drift.</td>
+          <td><span id="lmt-status-display-live-aspect-resize" class="status-badge status-yellow" data-tooltip="Side handlebar resize validated by user; v0.7.10 fixes negative-coordinate clamping (Math.Max(0, winX/winY)) and pins exact outer RECT on secondary monitors via SetWindowPos.">◐ Pending Validation</span></td>
         </tr>
       </tbody>
     </table>
