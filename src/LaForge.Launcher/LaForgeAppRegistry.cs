@@ -585,7 +585,9 @@ public static class LaForgeAppRegistry
                     try
                     {
                         var cfg = System.Text.Json.JsonSerializer.Deserialize<LaForgeConfig>(File.ReadAllText(cfgFile), jsonOpts);
-                        if (cfg != null && !string.IsNullOrWhiteSpace(cfg.App.PackageName))
+                        if (cfg != null &&
+                            !string.IsNullOrWhiteSpace(cfg.App.PackageName) &&
+                            !GmsInteropManager.IsExcludedInteropPackage(cfg.App.PackageName))
                         {
                             LoadOrCreate(cfg, subDir);
                         }
@@ -608,9 +610,15 @@ public static class LaForgeAppRegistry
         {
             try
             {
+                if (Path.GetFileName(file).Equals("gms_interop.conf", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 var p = ParseConfFile(file);
                 if (string.IsNullOrWhiteSpace(p.PackageName) ||
-                    p.PackageName.Equals("com.example.placeholder", StringComparison.OrdinalIgnoreCase))
+                    p.PackageName.Equals("com.example.placeholder", StringComparison.OrdinalIgnoreCase) ||
+                    GmsInteropManager.IsExcludedInteropPackage(p.PackageName))
                 {
                     continue;
                 }

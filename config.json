@@ -53,5 +53,21 @@
         "action": "android.intent.action.VIEW"
       }
     }
+  },
+  "gms_interop": {
+    "inject_microg": true,
+    "inject_vending_stub": true,
+    "microg_apk_path": "runtime/gms/microg-gms-core.apk",
+    "vending_stub_apk_path": "runtime/gms/vending-licensing-stub.apk",
+    "excluded_packages": [
+      "com.google.android.gms",
+      "com.mgoogle.android.gms",
+      "org.microg.gms",
+      "org.microg.gms.droidguard",
+      "app.revanced.android.gms",
+      "com.google.android.gsf",
+      "com.mgoogle.android.gsf",
+      "com.android.vending"
+    ]
   }
 }

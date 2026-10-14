@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.android.vending"
+    android:versionCode="84000000"
+    android:versionName="40.0.0-laforge-stub">
+
+    <uses-sdk
+        android:minSdkVersion="21"
+        android:targetSdkVersion="34" />
+
+    <!-- Standard Google Play LVL & Billing permissions so client APKs requesting them succeed -->
+    <permission
+        android:name="com.android.vending.CHECK_LICENSE"
+        android:protectionLevel="normal" />
+    <permission
+        android:name="com.android.vending.BILLING"
+        android:protectionLevel="normal" />
+
+    <application
+        android:label="LaForge Vending LVL Stub"
+        android:allowBackup="false"
+        android:hasCode="true"
+        android:directBootAware="true">
+
+        <!-- Headless Google Play Licensing Verification Library (LVL) Service Stub -->
+        <service
+            android:name="com.android.vending.licensing.LicensingStubService"
+            android:enabled="true"
+            android:exported="true"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="com.android.vending.licensing.ILicensingService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+
+    </application>
+</manifest>

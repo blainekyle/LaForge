@@ -581,6 +581,9 @@ public static class Program
             // Always ensure host microphone bridge is active in QEMU for this emulator session
             RunProcessCaptureOutput(adbExe, new[] { "emu", "avd", "hostmicon" }, 2500);
 
+            // Execute pre-flight injection / reconciliation for microG Services Core and Vending LVL stub (0x0001 NOT_LICENSED)
+            GmsInteropManager.ExecutePreFlightInjection(adbExe, AppContext.BaseDirectory);
+
             string kioskLockCmd =
                 "wm dismiss-keyguard; " +
                 "cmd statusbar collapse; " +

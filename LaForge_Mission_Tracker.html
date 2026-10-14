@@ -293,10 +293,10 @@
       </p>
     </div>
     <div class="lmt-meta-box" id="lmt-meta-version">
-      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v0.7.11-camera-display-settings-purge</span></div>
+      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v0.8.0-gms-licensing-interop</span></div>
       <div><strong>Target Runtime:</strong> Android 14 (API 34 x86_64 + WHPX)</div>
       <div><strong>Display Bridge:</strong> scrcpy v5.0.1 + SDL 3.4.18 (D3D11)</div>
-      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-14 14:43 CDT</span></div>
+      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-14 15:08 CDT</span></div>
     </div>
   </header>
 
@@ -313,17 +313,16 @@
   <section class="lmt-section" id="lmt-sec-phases">
     <div class="section-header">
       <h2>1. Chronological Retrospective &amp; Canonical Phase Roadmap</h2>
-      <span class="section-sub">Reconciling the original 4-phase PRD with injected architectural sidequests (Phases 1 – 7)</span>
+      <span class="section-sub">Reconciling the original 4-phase PRD with injected architectural sidequests (Phases 1 – 8)</span>
     </div>
     <div class="retrospective-box">
-      <strong>Why Phase Numbering Drifted ("Phase 5" vs. "Phase 8"):</strong>
+      <strong>Why Phase Numbering Evolved ("Phase 5" through "Phase 8"):</strong>
       At inception (Step 0), the PRD defined 4 foundational phases (PoC scripts &rarr; Native C# <code class="inline-code">launcher.exe</code> &rarr; APK Packager &rarr; Embedded <code class="inline-code">scrcpy</code> Bridge).
-      At <code class="inline-code">v0.4.2</code> (Step 203), the remaining roadmap was defined as <strong>Phase 5</strong> (Single-Window UX &amp; Bespoke EXEs), <strong>Phase 6</strong> (Live File Relay &amp; Windows Registry Associations), and <strong>Phase 7</strong> (Host Mic Input &amp; Graphical APK Builder).
-      Subsequently, two major user-requested architectural milestones were injected ahead of the original Phase 6/7:
-      (1) <strong>Bidirectional <code class="inline-code">/sdcard/HOST</code> Filesystem Bridge</strong> (<code class="inline-code">v0.5.0</code>) and
-      (2) <strong>Concurrent Multi-Display Virtual Screen Isolation, Windowing Customizations &amp; LaForge Central Console</strong> (<code class="inline-code">v0.7.0–v0.7.11</code>).
-      Assigning integer phase numbers to those two sidequests bumped the original Phase 6 &amp; 7 to "Phase 8, 9, 10" in <code class="inline-code">completion_plan.md</code>, while the conversation summary still referenced "Phase 5".
-      The table below establishes the <strong>canonical 7-Phase Master Roadmap</strong>.
+      Subsequently, three major user-requested architectural milestones were inserted ahead of File Relays and the Graphical APK Builder:
+      (1) <strong>Bidirectional <code class="inline-code">/sdcard/HOST</code> Filesystem Bridge</strong> (<code class="inline-code">v0.5.0</code>),
+      (2) <strong>Concurrent Multi-Display Virtual Screen Isolation, Windowing Customizations &amp; LaForge Central Console</strong> (<code class="inline-code">v0.7.0–v0.7.11</code>, Phase 5), and
+      (3) <strong>GMS &amp; Licensing Interop Subsystem (<code class="inline-code">microG</code> + Custom <code class="inline-code">com.android.vending</code> LVL Stub)</strong> (<code class="inline-code">v0.8.0</code>, Phase 6).
+      The table below establishes the <strong>canonical 8-Phase Master Roadmap</strong>.
     </div>
     <table class="lmt-table">
       <thead>
@@ -373,17 +372,24 @@
         </tr>
         <tr id="lmt-phase-6">
           <td><code class="elem-id">lmt-phase-6</code></td>
-          <td><strong>Phase 6</strong><br/><small>(Next Phase)</small></td>
-          <td><code class="inline-code">v0.7.8</code> / <code class="inline-code">v0.8.0</code></td>
-          <td><strong>Host Mic &amp; Webcam Passthrough + Live <code class="inline-code">ACTION_VIEW</code> File Relays / Registry Associations:</strong> Host mic validated in Voice Recorder and host physical webcam (<code class="inline-code">webcam4</code> Integrated Webcam + <code class="inline-code">emulated</code> back camera) validated in Fossify Camera; remaining work is Virtual Display <code class="inline-code">ACTION_VIEW</code> file relay routing and <code class="inline-code">--register</code>/<code class="inline-code">--unregister</code> Windows file associations.</td>
-          <td><span id="lmt-status-phase-6" class="status-badge status-blue" data-tooltip="Host microphone and host webcam both validated by user; Windows Registry file associations (--register/--unregister) and Virtual Display ACTION_VIEW relay next.">◈ In Progress</span></td>
+          <td><strong>Phase 6</strong><br/><small>(GMS &amp; Licensing)</small></td>
+          <td><code class="inline-code">v0.8.0-gms-licensing-interop</code></td>
+          <td><strong>GMS &amp; Licensing Interop Subsystem (<code class="inline-code">microG</code> + Custom <code class="inline-code">com.android.vending</code> LVL Stub):</strong> Silent pre-flight ADB push/install pipeline for <code class="inline-code">microG Services Core</code> and a custom headless <code class="inline-code">com.android.vending</code> LVL AIDL stub (<code class="inline-code">ILicensingService</code> hardcoded to return <code class="inline-code">0x0001 NOT_LICENSED</code>), UI exclusion from the user-facing apps list, and the <strong>"microG &amp; Services"</strong> administrative section in <code class="inline-code">LaForge Console</code>.</td>
+          <td><span id="lmt-status-phase-6" class="status-badge status-yellow" data-tooltip="Implemented in v0.8.0 (microG v0.3.17.252432 + compiled com.android.vending LVL stub + Console 'microG &amp; Services' panel); ready for user validation.">◐ Pending Validation</span></td>
         </tr>
         <tr id="lmt-phase-7">
           <td><code class="elem-id">lmt-phase-7</code></td>
-          <td><strong>Phase 7</strong><br/><small>(Final Phase)</small></td>
+          <td><strong>Phase 7</strong><br/><small>(Next Phase)</small></td>
           <td><code class="inline-code">v0.9.0-planned</code></td>
-          <td><strong>Graphical APK Builder in <code class="inline-code">LaForge Console</code> &amp; Enterprise APK Hardening:</strong> Visual <em>"+ Forge New APK..."</em> wizard inside <code class="inline-code">LaForgeConsole.exe</code> (drag-and-drop APK, inspect manifest, configure policies/shares, compile bundle) and compatibility testing for complex apps (e.g., Citrix Workspace).</td>
-          <td><span id="lmt-status-phase-7" class="status-badge status-orange" data-tooltip="CLI packager (--forge) is complete, but the graphical '+ Forge New APK...' builder modal inside LaForge Console and enterprise APK validation are not yet implemented.">○ Not Implemented</span></td>
+          <td><strong>Live <code class="inline-code">ACTION_VIEW</code> File Relays to Active Virtual Displays &amp; Windows Registry Associations:</strong> Virtual Display <code class="inline-code">ACTION_VIEW</code> file relay routing (<code class="inline-code">--relay-file</code>) and <code class="inline-code">--register</code>/<code class="inline-code">--unregister</code> Windows <code class="inline-code">HKCU\Software\Classes</code> file associations.</td>
+          <td><span id="lmt-status-phase-7" class="status-badge status-blue" data-tooltip="Basic file push + ACTION_VIEW intent works on Display #0; Virtual Display ACTION_VIEW relay and Windows Registry file associations (--register/--unregister) are next.">◈ In Progress</span></td>
+        </tr>
+        <tr id="lmt-phase-8">
+          <td><code class="elem-id">lmt-phase-8</code></td>
+          <td><strong>Phase 8</strong><br/><small>(Final Phase)</small></td>
+          <td><code class="inline-code">v1.0.0-planned</code></td>
+          <td><strong>Graphical APK Builder in <code class="inline-code">LaForge Console</code> &amp; Enterprise APK Hardening:</strong> Visual <em>"+ Forge New APK..."</em> wizard inside <code class="inline-code">LaForgeConsole.exe</code> (drag-and-drop APK, extract real APK icons, preview manifest, configure policies/shares, compile bundle) and compatibility testing for complex apps (e.g., Citrix Workspace).</td>
+          <td><span id="lmt-status-phase-8" class="status-badge status-orange" data-tooltip="CLI packager (--forge) is complete, but the graphical '+ Forge New APK...' builder modal inside LaForge Console and enterprise APK validation are planned for Phase 8.">○ Not Implemented</span></td>
         </tr>
       </tbody>
     </table>
@@ -601,13 +607,13 @@
           <td><code class="elem-id">lmt-bridge-file-relay-cli</code></td>
           <td><strong>Live <code class="inline-code">ACTION_VIEW</code> File Relay to Active Virtual Display</strong></td>
           <td>Pushes host files to <code class="inline-code">/sdcard/Download</code> and dispatches <code class="inline-code">android.intent.action.VIEW</code>; needs <code class="inline-code">--display &lt;id&gt;</code> &amp; dedicated <code class="inline-code">VIEW</code> activity targeting when an app is already open on a virtual display.</td>
-          <td><span id="lmt-status-bridge-file-relay-cli" class="status-badge status-blue" data-tooltip="Basic file push + ACTION_VIEW intent works on Display #0; routing directly into an active Virtual Display's VIEW activity is scheduled for Phase 6.">◈ In Progress</span></td>
+          <td><span id="lmt-status-bridge-file-relay-cli" class="status-badge status-blue" data-tooltip="Basic file push + ACTION_VIEW intent works on Display #0; routing directly into an active Virtual Display's VIEW activity is scheduled for Phase 7.">◈ In Progress</span></td>
         </tr>
         <tr id="lmt-bridge-win-registry-assoc">
           <td><code class="elem-id">lmt-bridge-win-registry-assoc</code></td>
           <td><strong>Windows Registry File Associations (<code class="inline-code">--register</code> / <code class="inline-code">--unregister</code>)</strong></td>
           <td>Per-user <code class="inline-code">HKCU\Software\Classes</code> file extension binding so double-clicking an associated file in Explorer opens it inside the forged LaForge app.</td>
-          <td><span id="lmt-status-bridge-win-registry-assoc" class="status-badge status-orange" data-tooltip="Planned for Phase 6; not yet implemented.">○ Not Implemented</span></td>
+          <td><span id="lmt-status-bridge-win-registry-assoc" class="status-badge status-orange" data-tooltip="Planned for Phase 7; not yet implemented.">○ Not Implemented</span></td>
         </tr>
       </tbody>
     </table>
@@ -652,6 +658,50 @@
           <td><strong>Intercepted Android Notification Center</strong></td>
           <td>Parses <code class="inline-code">dumpsys notification --noredact</code> for all remembered packages and displays title, text, and channel in the bottom Console table with a <em>Clear All Notifications</em> action (non-dismissible active media session notifications remain while playing, as expected).</td>
           <td><span id="lmt-status-console-notif-center" class="status-badge status-green" data-tooltip="Validated by user in Step 582 ('I've also now been able to validate that the notification center is working perfectly in Console').">● Validated</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- SECTION 6A: GMS & LICENSING INTEROP SUBSYSTEM -->
+  <section class="lmt-section" id="lmt-sec-gms-interop">
+    <div class="section-header">
+      <h2>6A. GMS &amp; Licensing Interop Subsystem (<code class="inline-code">microG</code> &amp; Custom <code class="inline-code">com.android.vending</code> LVL Stub)</h2>
+      <span class="section-sub">Phase 6: Silent pre-flight injection, DRM-respecting 0x0001 NOT_LICENSED LVL stub, UI exclusion, and Console admin controls</span>
+    </div>
+    <table class="lmt-table">
+      <thead>
+        <tr>
+          <th style="width: 195px;">Tracker ID</th>
+          <th style="width: 240px;">Subsystem / Feature</th>
+          <th>Implementation Details &amp; Files</th>
+          <th style="width: 185px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr id="lmt-gms-microg-pipeline">
+          <td><code class="elem-id">lmt-gms-microg-pipeline</code></td>
+          <td><strong>Silent Pre-Flight <code class="inline-code">microG</code> Services Core ADB Injection Pipeline</strong></td>
+          <td><code class="inline-code">GmsInteropManager.ExecutePreFlightInjection</code> (<code class="inline-code">src/LaForge.Launcher/GmsInteropManager.cs</code>) and <code class="inline-code">execute_gms_preflight_injection</code> (<code class="inline-code">laforge_poc.py</code>) silently install <code class="inline-code">runtime/gms/microg-gms-core.apk</code> (<code class="inline-code">v0.3.17.252432</code>) with <code class="inline-code">adb install -r -g --force-queryable</code> and whitelist it from Doze (<code class="inline-code">deviceidle whitelist</code>).</td>
+          <td><span id="lmt-status-gms-microg-pipeline" class="status-badge status-yellow" data-tooltip="Implemented and pre-provisioned in default_boot snapshot; awaiting user validation.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-gms-ui-exclusion">
+          <td><code class="elem-id">lmt-gms-ui-exclusion</code></td>
+          <td><strong>User-Facing Apps List Exclusion Filter (<code class="inline-code">microG</code> &amp; <code class="inline-code">com.android.vending</code>)</strong></td>
+          <td><code class="inline-code">GmsInteropManager.IsExcludedInteropPackage</code> filters <code class="inline-code">com.google.android.gms</code>, <code class="inline-code">com.mgoogle.android.gms</code>, <code class="inline-code">org.microg.*</code>, <code class="inline-code">com.google.android.gsf</code>, and <code class="inline-code">com.android.vending</code> out of <code class="inline-code">LaForgeAppRegistry.DiscoverRememberedApps</code> and <code class="inline-code">filter_user_facing_packages</code> (<code class="inline-code">laforge_poc.py</code>).</td>
+          <td><span id="lmt-status-gms-ui-exclusion" class="status-badge status-yellow" data-tooltip="Implemented in LaForgeAppRegistry.cs and laforge_poc.py; awaiting user validation.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-gms-vending-lvl-stub">
+          <td><code class="elem-id">lmt-gms-vending-lvl-stub</code></td>
+          <td><strong>Custom Headless <code class="inline-code">com.android.vending</code> LVL AIDL Stub (<code class="inline-code">0x0001 NOT_LICENSED</code>)</strong></td>
+          <td>Built from source in <code class="inline-code">src/LaForge.VendingStub/</code> (<code class="inline-code">ILicensingService.aidl</code>, <code class="inline-code">ILicenseResultListener.aidl</code>, <code class="inline-code">LicensingStubService.java</code>) into <code class="inline-code">runtime/gms/vending-licensing-stub.apk</code>. Binds <code class="inline-code">com.android.vending.licensing.ILicensingService</code> and invokes <code class="inline-code">listener.verifyLicense(0x0001, null, null)</code> so free apps with Play LVL dependencies don't crash on <code class="inline-code">NullPointerException</code> while paid apps enforce standard <code class="inline-code">NOT_LICENSED</code> handling.</td>
+          <td><span id="lmt-status-gms-vending-lvl-stub" class="status-badge status-yellow" data-tooltip="Compiled, signed, and installed into Android 14 runtime with --force-queryable; awaiting user validation.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-gms-console-controls">
+          <td><code class="elem-id">lmt-gms-console-controls</code></td>
+          <td><strong>Native Console <code class="inline-code">"microG &amp; Services"</code> Administrative Section</strong></td>
+          <td>Dedicated panel inside <code class="inline-code">LaForgeConsoleWindow.cs</code> providing live <code class="inline-code">microG</code> + <code class="inline-code">Vending LVL Stub</code> telemetry, <strong>⚙ microG Settings</strong> button (spawns <code class="inline-code">org.microg.gms.ui.SettingsActivity</code> on an isolated <code class="inline-code">540x960</code> virtual display), <strong>🧹 Clear microG Data</strong> (<code class="inline-code">pm clear</code>), <strong>🔄 Re-Inject / Sync</strong>, and persistent boot-injection checkboxes (<code class="inline-code">gms_interop.conf</code>).</td>
+          <td><span id="lmt-status-gms-console-controls" class="status-badge status-yellow" data-tooltip="Implemented in LaForgeConsoleWindow.cs; awaiting user validation.">◐ Pending Validation</span></td>
         </tr>
       </tbody>
     </table>
@@ -795,7 +845,7 @@
             <strong>Root Cause (Proven via <code class="inline-code">dumpsys window displays</code> &amp; <code class="inline-code">display_settings.xml</code>):</strong> Even after setting <code class="inline-code">544x960</code> in <code class="inline-code">v0.7.8</code>, <code class="inline-code">/data/system/display_settings.xml</code> inside the <code class="inline-code">default_boot</code> snapshot contained a persisted <code class="inline-code">forcedWidth="1600" forcedHeight="904"</code> entry for <code class="inline-code">virtual:com.android.shell,2000,scrcpy,0</code> (<code class="inline-code">Display #48</code>), overriding the first virtual display from <code class="inline-code">init=544x960</code> to <code class="inline-code">base=1600x904</code>! Additionally, <code class="inline-code">wm fixed-to-user-rotation enabled</code> activated Android 14's <code class="inline-code">LetterboxUiController</code> (<code class="inline-code">Rect(545, 0 - 1056, 904)</code>).<br/>
             <strong>Fix (<code class="inline-code">v0.7.11</code>):</strong> Purged <code class="inline-code">/data/system/display_settings.xml</code> and saved a clean <code class="inline-code">default_boot</code> snapshot (<code class="inline-code">init=544x960 cur=544x960 app=544x960</code>), set <code class="inline-code">wm fixed-to-user-rotation disabled</code> (while keeping <code class="inline-code">wm user-rotation lock 0</code> + <code class="inline-code">wm set-ignore-orientation-request true</code>), and enabled <code class="inline-code">dynamic_aspect_resize=true</code> by default.
           </td>
-          <td><span id="lmt-status-bug-camera-pillarbox-window" class="status-badge status-yellow" data-tooltip="Fixed in v0.7.11; Display #2 verified at init=544x960 cur=544x960 app=544x960 with zero letterboxing.">◐ Pending Validation</span></td>
+          <td><span id="lmt-status-bug-camera-pillarbox-window" class="status-badge status-green" data-tooltip="Validated by user in Step 614 ('Camera fix is perfect. Call it validated.').">● Validated</span></td>
         </tr>
         <tr id="lmt-bug-cross-dpi-resize-loop">
           <td><code class="elem-id">lmt-bug-cross-dpi-resize-loop</code></td>

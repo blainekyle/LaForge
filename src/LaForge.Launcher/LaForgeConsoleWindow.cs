@@ -21,6 +21,9 @@ public sealed class LaForgeConsoleWindow : Form
     private readonly FlowLayoutPanel _appsFlowPanel;
     private readonly ListView _notifListView;
     private readonly Label _lblHeaderStats;
+    private readonly Label _lblGmsStatus;
+    private readonly CheckBox _chkInjectMicroG;
+    private readonly CheckBox _chkInjectVending;
     private readonly NotifyIcon _trayIcon;
     private readonly System.Windows.Forms.Timer _refreshTimer;
 
@@ -29,6 +32,7 @@ public sealed class LaForgeConsoleWindow : Form
     private Process? _headlessAudioBridgeProcess;
     private EventWaitHandle? _consoleActiveEvent;
     private bool _isRefreshing;
+    private bool _suppressGmsToggleEvents;
     private bool _allowExit;
 
     private sealed class AppCardControls
@@ -153,11 +157,147 @@ public sealed class LaForgeConsoleWindow : Form
         headerPanel.Controls.Add(lblTitle);
         headerPanel.Controls.Add(_lblHeaderStats);
 
+        // Native "microG & Services" Administrative Menu Section (bypasses user-facing apps list)
+        var gmsInteropCfg = GmsInteropManager.LoadConfig();
+        var gmsPanel = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 78,
+            BackColor = Color.FromArgb(19, 23, 33),
+            Padding = new Padding(20, 8, 20, 8)
+        };
+
+        var lblGmsHeader = new Label
+        {
+            Text = "🧩 microG & Services   (GMS Core & LVL 0x0001 Licensing Stub — Excluded from User Apps List)",
+            Font = new Font("Segoe UI Semibold", 10F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(210, 168, 255),
+            AutoSize = true,
+            Location = new Point(20, 9)
+        };
+
+        _lblGmsStatus = new Label
+        {
+            Text = "microG Core: Checking...   |   Vending LVL Stub (0x0001 NOT_LICENSED): Checking...",
+            Font = new Font("Consolas", 8.5F, FontStyle.Regular),
+            ForeColor = Color.FromArgb(155, 175, 200),
+            AutoSize = true,
+            Location = new Point(22, 31)
+        };
+
+        _chkInjectMicroG = new CheckBox
+        {
+            Text = "Inject microG on AVD Boot",
+            Checked = gmsInteropCfg.InjectMicroGOnBoot,
+            Font = new Font("Segoe UI Semibold", 8.75F, FontStyle.Regular),
+            ForeColor = Color.FromArgb(220, 230, 242),
+            AutoSize = true,
+            Location = new Point(24, 52),
+            Cursor = Cursors.Hand
+        };
+
+        _chkInjectVending = new CheckBox
+        {
+            Text = "Inject Vending LVL Stub (0x0001 NOT_LICENSED) on AVD Boot",
+            Checked = gmsInteropCfg.InjectVendingStubOnBoot,
+            Font = new Font("Segoe UI Semibold", 8.75F, FontStyle.Regular),
+            ForeColor = Color.FromArgb(220, 230, 242),
+            AutoSize = true,
+            Location = new Point(225, 52),
+            Cursor = Cursors.Hand
+        };
+
+        async Task HandleGmsToggleChangedAsync()
+        {
+            if (_suppressGmsToggleEvents) return;
+            var updatedCfg = GmsInteropManager.LoadConfig();
+            updatedCfg.InjectMicroGOnBoot = _chkInjectMicroG.Checked;
+            updatedCfg.InjectVendingStubOnBoot = _chkInjectVending.Checked;
+            GmsInteropManager.SaveConfig(updatedCfg);
+
+            _lblGmsStatus.Text = "Applying GMS & Vending LVL boot policy...";
+            _lblGmsStatus.ForeColor = Color.FromArgb(255, 205, 95);
+            await Task.Run(() => GmsInteropManager.ExecutePreFlightInjection(_adbExe, _baseDir, null, forceReconcile: true));
+            await RefreshTelemetryAsync();
+        }
+
+        _chkInjectMicroG.CheckedChanged += async (_, _) => await HandleGmsToggleChangedAsync();
+        _chkInjectVending.CheckedChanged += async (_, _) => await HandleGmsToggleChangedAsync();
+
+        var gmsActions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Right,
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Padding = new Padding(0, 14, 4, 0)
+        };
+
+        var btnMicroGSettings = CreateButton("⚙ microG Settings", Color.FromArgb(88, 56, 145));
+        btnMicroGSettings.Click += async (_, _) =>
+        {
+            btnMicroGSettings.Enabled = false;
+            _lblGmsStatus.Text = "Launching microG Settings (org.microg.gms.ui.SettingsActivity)...";
+            _lblGmsStatus.ForeColor = Color.FromArgb(210, 168, 255);
+            try
+            {
+                string msg = await Task.Run(() => GmsInteropManager.LaunchMicroGSettings(_adbExe, _scrcpyExe, _baseDir));
+                _lblGmsStatus.Text = msg;
+            }
+            finally
+            {
+                btnMicroGSettings.Enabled = true;
+            }
+        };
+
+        var btnClearMicroG = CreateButton("🧹 Clear microG Data", Color.FromArgb(128, 72, 28));
+        btnClearMicroG.Click += async (_, _) =>
+        {
+            btnClearMicroG.Enabled = false;
+            try
+            {
+                string msg = await Task.Run(() => GmsInteropManager.ClearMicroGData(_adbExe));
+                _lblGmsStatus.Text = msg;
+                _lblGmsStatus.ForeColor = Color.FromArgb(255, 205, 95);
+            }
+            finally
+            {
+                btnClearMicroG.Enabled = true;
+            }
+        };
+
+        var btnSyncGms = CreateButton("🔄 Re-Inject / Sync", Color.FromArgb(35, 95, 145));
+        btnSyncGms.Click += async (_, _) =>
+        {
+            btnSyncGms.Enabled = false;
+            _lblGmsStatus.Text = "Running ADB pre-flight injection for microG + com.android.vending stub...";
+            _lblGmsStatus.ForeColor = Color.FromArgb(121, 192, 255);
+            try
+            {
+                await Task.Run(() => GmsInteropManager.ExecutePreFlightInjection(_adbExe, _baseDir, null, forceReconcile: true));
+                await RefreshTelemetryAsync();
+            }
+            finally
+            {
+                btnSyncGms.Enabled = true;
+            }
+        };
+
+        gmsActions.Controls.Add(btnMicroGSettings);
+        gmsActions.Controls.Add(btnClearMicroG);
+        gmsActions.Controls.Add(btnSyncGms);
+
+        gmsPanel.Controls.Add(gmsActions);
+        gmsPanel.Controls.Add(lblGmsHeader);
+        gmsPanel.Controls.Add(_lblGmsStatus);
+        gmsPanel.Controls.Add(_chkInjectMicroG);
+        gmsPanel.Controls.Add(_chkInjectVending);
+
         // Bottom Notification Center Panel
         var notifContainer = new Panel
         {
             Dock = DockStyle.Bottom,
-            Height = 205,
+            Height = 195,
             BackColor = Color.FromArgb(19, 22, 30),
             Padding = new Padding(18, 8, 18, 12)
         };
@@ -239,6 +379,7 @@ public sealed class LaForgeConsoleWindow : Form
 
         Controls.Add(_appsFlowPanel);
         Controls.Add(notifContainer);
+        Controls.Add(gmsPanel);
         Controls.Add(headerPanel);
 
         FormClosing += (_, e) =>
@@ -427,9 +568,46 @@ public sealed class LaForgeConsoleWindow : Form
             }
 
             var snapshotApps = _apps.ToList();
-            var telemetry = await Task.Run(() => LaForgeAppRegistry.QueryLiveTelemetry(_adbExe, snapshotApps));
+            var telemetryTask = Task.Run(() => LaForgeAppRegistry.QueryLiveTelemetry(_adbExe, snapshotApps));
+            var gmsStatusTask = Task.Run(() => (Cfg: GmsInteropManager.LoadConfig(), Status: GmsInteropManager.QueryInteropStatus(_adbExe, _baseDir)));
+            await Task.WhenAll(telemetryTask, gmsStatusTask);
+
+            var telemetry = telemetryTask.Result;
+            var (gmsCfg, gmsStatus) = gmsStatusTask.Result;
 
             if (IsDisposed) return;
+
+            _suppressGmsToggleEvents = true;
+            try
+            {
+                _chkInjectMicroG.Checked = gmsCfg.InjectMicroGOnBoot;
+                _chkInjectVending.Checked = gmsCfg.InjectVendingStubOnBoot;
+            }
+            finally
+            {
+                _suppressGmsToggleEvents = false;
+            }
+
+            if (gmsStatus.DeviceOnline)
+            {
+                string mgText = gmsStatus.MicroGInstalled
+                    ? $"● microG Installed ({gmsStatus.DetectedMicroGPackage}{(string.IsNullOrEmpty(gmsStatus.MicroGVersion) ? "" : $" v{gmsStatus.MicroGVersion}")})"
+                    : "○ microG Not Installed";
+                string vndText = gmsStatus.VendingStubInstalled
+                    ? "● Vending LVL Stub Installed (0x0001 NOT_LICENSED)"
+                    : "○ Vending LVL Stub Not Installed";
+                _lblGmsStatus.Text = $"{mgText}   |   {vndText}";
+                _lblGmsStatus.ForeColor = (gmsStatus.MicroGInstalled && gmsStatus.VendingStubInstalled)
+                    ? Color.FromArgb(126, 231, 135)
+                    : Color.FromArgb(227, 179, 65);
+            }
+            else
+            {
+                string mgHost = gmsStatus.MicroGApkPresentOnHost ? "Ready" : "Missing APK";
+                string vndHost = gmsStatus.VendingApkPresentOnHost ? "Ready" : "Missing APK";
+                _lblGmsStatus.Text = $"AVD Offline — Next Boot: microG={(gmsCfg.InjectMicroGOnBoot ? "ON" : "OFF")} ({mgHost})  |  Vending LVL Stub={(gmsCfg.InjectVendingStubOnBoot ? "ON" : "OFF")} ({vndHost})";
+                _lblGmsStatus.ForeColor = Color.FromArgb(165, 175, 195);
+            }
 
             int runningCount = 0;
             int bgCount = 0;
