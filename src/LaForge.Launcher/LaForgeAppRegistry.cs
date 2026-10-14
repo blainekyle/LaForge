@@ -107,11 +107,47 @@ public static class LaForgeAppRegistry
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
 
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+        public int Width => Right - Left;
+        public int Height => Bottom - Top;
+    }
+
     private const int SW_HIDE = 0;
     private const int SW_SHOW = 5;
     private const int SW_RESTORE = 9;
+    private const uint SWP_NOZORDER = 0x0004;
+    private const uint SWP_NOACTIVATE = 0x0010;
 
     public sealed record ScrcpyWindowInfo(IntPtr Hwnd, int ProcessId, string Title, bool IsVisible);
+
+    public static bool TryGetWindowBoundsByPid(int scrcpyPid, out RECT rect)
+    {
+        rect = default;
+        if (scrcpyPid <= 0) return false;
+        var win = FindAllScrcpyWindows().FirstOrDefault(w => w.ProcessId == scrcpyPid);
+        if (win == null || win.Hwnd == IntPtr.Zero) return false;
+        return GetWindowRect(win.Hwnd, out rect) && rect.Width >= 100 && rect.Height >= 100;
+    }
+
+    public static bool TryRestoreWindowBoundsByPid(int scrcpyPid, RECT rect)
+    {
+        if (scrcpyPid <= 0 || rect.Width < 100 || rect.Height < 100) return false;
+        var win = FindAllScrcpyWindows().FirstOrDefault(w => w.ProcessId == scrcpyPid);
+        if (win == null || win.Hwnd == IntPtr.Zero) return false;
+        return SetWindowPos(win.Hwnd, IntPtr.Zero, rect.Left, rect.Top, rect.Width, rect.Height, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
 
     public static List<ScrcpyWindowInfo> FindAllScrcpyWindows()
     {

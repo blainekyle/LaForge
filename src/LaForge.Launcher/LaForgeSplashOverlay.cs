@@ -23,8 +23,8 @@ public sealed class LaForgeSplashOverlay : Form
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         TopMost = true;
-        Width = 460;
-        Height = 132;
+        Width = 640;
+        Height = 160;
         BackColor = Color.FromArgb(18, 22, 32);
         ForeColor = Color.FromArgb(235, 240, 248);
         DoubleBuffered = true;
@@ -43,8 +43,8 @@ public sealed class LaForgeSplashOverlay : Form
 
         var picIcon = new PictureBox
         {
-            Size = new Size(56, 56),
-            Location = new Point(22, 26),
+            Size = new Size(64, 64),
+            Location = new Point(26, 30),
             SizeMode = PictureBoxSizeMode.Zoom,
             BackColor = Color.Transparent
         };
@@ -72,34 +72,34 @@ public sealed class LaForgeSplashOverlay : Form
         _lblHeadline = new Label
         {
             Text = headlineText,
-            Font = new Font("Segoe UI Semibold", 12.0F, FontStyle.Bold),
+            Font = new Font("Segoe UI Semibold", 13.0F, FontStyle.Bold),
             ForeColor = Color.FromArgb(240, 246, 255),
-            Location = new Point(92, 24),
-            Size = new Size(348, 30),
+            Location = new Point(108, 24),
+            Size = new Size(508, 34),
             AutoEllipsis = true
         };
 
         _lblSubtext = new Label
         {
             Text = subText,
-            Font = new Font("Segoe UI", 9.25F, FontStyle.Regular),
+            Font = new Font("Segoe UI", 9.75F, FontStyle.Regular),
             ForeColor = Color.FromArgb(145, 165, 195),
-            Location = new Point(92, 56),
-            Size = new Size(348, 24),
+            Location = new Point(108, 60),
+            Size = new Size(508, 46),
             AutoEllipsis = true
         };
 
         _progressTrack = new Panel
         {
-            Location = new Point(22, 98),
-            Size = new Size(416, 6),
+            Location = new Point(26, 124),
+            Size = new Size(588, 7),
             BackColor = Color.FromArgb(32, 39, 54)
         };
 
         _progressBar = new Panel
         {
             Location = new Point(0, 0),
-            Size = new Size(140, 6),
+            Size = new Size(180, 7),
             BackColor = Color.FromArgb(88, 166, 255)
         };
         _progressTrack.Controls.Add(_progressBar);

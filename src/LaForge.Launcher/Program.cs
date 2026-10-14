@@ -561,6 +561,9 @@ public static class Program
                 string oneTimeCmd =
                     $"wm size {win.Width}x{win.Height}; " +
                     "wm density 160; " +
+                    "wm user-rotation lock 0; " +
+                    "wm fixed-to-user-rotation enabled; " +
+                    "wm set-ignore-orientation-request true; " +
                     "pm disable-user --user 0 com.android.inputmethod.latin >/dev/null 2>&1; " +
                     "settings put global window_animation_scale 0; " +
                     "settings put global transition_animation_scale 0; " +
@@ -1088,6 +1091,20 @@ public static class Program
             logger?.Invoke($"[VirtualDisplay] No newly allocated scrcpy display detected; falling back to primary display.");
             LaunchApkWithRetry(adbExe, app, 10);
             return -1;
+        }
+
+        // Lock virtual display rotation and ignore app orientation requests so child intents (e.g. portrait Camera inside Gallery)
+        // never rotate the virtual display or cause scrcpy to resize/reposition the host window
+        try
+        {
+            RunProcessCaptureOutput(
+                adbExe,
+                new[] { "shell", $"wm user-rotation -d {targetDisplayId} lock 0; wm fixed-to-user-rotation -d {targetDisplayId} enabled; wm set-ignore-orientation-request -d {targetDisplayId} true" },
+                2500);
+        }
+        catch
+        {
+            // Ignore if wm per-display lock is unsupported
         }
 
         // 1. If the app already has an active non-finishing task (e.g., FirstRunActivity or MainActivity), move it directly to targetDisplayId

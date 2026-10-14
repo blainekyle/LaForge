@@ -31,6 +31,7 @@ public sealed class LaForgeWindow : Form
     private System.Windows.Forms.Timer? _crossAppTimer;
     private int _allocatedDisplayId = -1;
     private bool _isCheckingCrossApp;
+    private LaForgeAppRegistry.RECT _lastKnownScrcpyBounds;
 
     public LaForgeWindow(LaForgeConfig config, string configPath, string configDir, string? initialRelayFile)
     {
@@ -667,9 +668,14 @@ public sealed class LaForgeWindow : Form
     {
         if (_allocatedDisplayId <= 0 || string.IsNullOrWhiteSpace(_config.App.PackageName)) return;
 
+        if (_activeScrcpyProcess != null && !_activeScrcpyProcess.HasExited)
+        {
+            LaForgeAppRegistry.TryGetWindowBoundsByPid(_activeScrcpyProcess.Id, out _lastKnownScrcpyBounds);
+        }
+
         _crossAppTimer?.Stop();
         _crossAppTimer?.Dispose();
-        _crossAppTimer = new System.Windows.Forms.Timer { Interval = 1800 };
+        _crossAppTimer = new System.Windows.Forms.Timer { Interval = 750 };
         _crossAppTimer.Tick += async (_, _) => await CheckCrossAppBreakoutAsync(adbExe);
         _crossAppTimer.Start();
     }
@@ -682,6 +688,7 @@ public sealed class LaForgeWindow : Form
         _isCheckingCrossApp = true;
         try
         {
+            int scrcpyPid = _activeScrcpyProcess.Id;
             string? topPkg = await Task.Run(() => Program.GetTopResumedPackageOnDisplay(adbExe, _allocatedDisplayId));
             if (string.IsNullOrWhiteSpace(topPkg) ||
                 topPkg.Equals(_config.App.PackageName, StringComparison.OrdinalIgnoreCase) ||
@@ -689,6 +696,8 @@ public sealed class LaForgeWindow : Form
                 topPkg.StartsWith("com.google.android.", StringComparison.OrdinalIgnoreCase) ||
                 topPkg.Equals("android", StringComparison.OrdinalIgnoreCase))
             {
+                // Continuously record the user's current window size and position while our own app or system chooser is active
+                LaForgeAppRegistry.TryGetWindowBoundsByPid(scrcpyPid, out _lastKnownScrcpyBounds);
                 return;
             }
 
@@ -697,14 +706,27 @@ public sealed class LaForgeWindow : Form
             var targetApp = remembered.FirstOrDefault(a => a.PackageName.Equals(topPkg, StringComparison.OrdinalIgnoreCase));
             if (targetApp == null) return;
 
-            // 1. Pop the foreign activity off our virtual display so the caller app stays cleanly in its own window
+            var savedBounds = _lastKnownScrcpyBounds;
+
+            // 1. Pop the foreign activity off our virtual display and keep rotation locked so the caller app stays in its own window
             await Task.Run(() =>
             {
                 Program.RunProcessCaptureOutput(
                     adbExe,
-                    new[] { "shell", $"input -d {_allocatedDisplayId} keyevent 4" },
+                    new[] { "shell", $"wm user-rotation -d {_allocatedDisplayId} lock 0; wm fixed-to-user-rotation -d {_allocatedDisplayId} enabled; wm set-ignore-orientation-request -d {_allocatedDisplayId} true; input -d {_allocatedDisplayId} keyevent 4" },
                     2500);
             });
+
+            // Restore the originating window's exact Win32 bounds if SDL/scrcpy attempted a transient resize
+            if (savedBounds.Width >= 100 && savedBounds.Height >= 100)
+            {
+                LaForgeAppRegistry.TryRestoreWindowBoundsByPid(scrcpyPid, savedBounds);
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(250);
+                    LaForgeAppRegistry.TryRestoreWindowBoundsByPid(scrcpyPid, savedBounds);
+                });
+            }
 
             // 2. Restore the called app's window if already running/backgrounded, or launch its standalone EXE (which shows "Loading <App>...")
             if (!LaForgeAppRegistry.TryRestoreOrFocusAppWindow(targetApp) &&
