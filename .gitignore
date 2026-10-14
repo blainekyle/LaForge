@@ -19,3 +19,14 @@ dist/*/bridge/*
 Thumbs.db
 *.tmp
 *.log
+
+# local build/test scratch
+__pycache__/
+publish_out/build/
+publish/launcher/
+tests/test_assets/root_explorer.apk
+tests/test_assets/**/.gradle/
+tests/test_assets/**/build/
+tools/
+src/LaForge.VendingStub/rootexplorer_shim/
+src/LaForge.VendingStub/build/shim*

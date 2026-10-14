@@ -1,0 +1,39 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.laforge.lvlclienttest'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.laforge.lvlclienttest"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildFeatures {
+        aidl true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+// Copy the debug APK to <project>/../LVLClientTest.apk after assembleDebug.
+tasks.whenTaskAdded { task ->
+    if (task.name == 'assembleDebug') {
+        task.doLast {
+            copy {
+                from layout.buildDirectory.dir('outputs/apk/debug')
+                include 'app-debug.apk'
+                into rootProject.projectDir.parentFile
+                rename 'app-debug.apk', 'LVLClientTest.apk'
+            }
+        }
+    }
+}

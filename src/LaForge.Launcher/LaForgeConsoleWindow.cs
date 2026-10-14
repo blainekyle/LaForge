@@ -236,6 +236,24 @@ public sealed class LaForgeConsoleWindow : Form
         var btnMicroGSettings = CreateButton("⚙ microG Settings", Color.FromArgb(88, 56, 145));
         btnMicroGSettings.Click += async (_, _) =>
         {
+            var confirm = MessageBox.Show(
+                "WARNING: microG Settings is an advanced troubleshooting tool.\n\n" +
+                "LaForge configures microG automatically. Changing settings here can BREAK " +
+                "app compatibility, push notifications, or the licensing stub, and may require " +
+                "clearing microG data or re-injecting to recover.\n\n" +
+                "Do NOT sign in with a real Google account. Signing in from an uncertified " +
+                "device can cause Google to FLAG, restrict, or lock your account. Google Play " +
+                "purchases cannot be authorized through microG in any case.\n\n" +
+                "Open microG Settings anyway?",
+                "LaForge - Advanced / Risky",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (confirm != DialogResult.Yes)
+            {
+                return;
+            }
+
             btnMicroGSettings.Enabled = false;
             _lblGmsStatus.Text = "Launching microG Settings (org.microg.gms.ui.SettingsActivity)...";
             _lblGmsStatus.ForeColor = Color.FromArgb(210, 168, 255);

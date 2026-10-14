@@ -683,25 +683,25 @@
           <td><code class="elem-id">lmt-gms-microg-pipeline</code></td>
           <td><strong>Silent Pre-Flight <code class="inline-code">microG</code> Services Core ADB Injection Pipeline</strong></td>
           <td><code class="inline-code">GmsInteropManager.ExecutePreFlightInjection</code> (<code class="inline-code">src/LaForge.Launcher/GmsInteropManager.cs</code>) and <code class="inline-code">execute_gms_preflight_injection</code> (<code class="inline-code">laforge_poc.py</code>) silently install <code class="inline-code">runtime/gms/microg-gms-core.apk</code> (<code class="inline-code">v0.3.17.252432</code>) with <code class="inline-code">adb install -r -g --force-queryable</code> and whitelist it from Doze (<code class="inline-code">deviceidle whitelist</code>).</td>
-          <td><span id="lmt-status-gms-microg-pipeline" class="status-badge status-yellow" data-tooltip="Implemented and pre-provisioned in default_boot snapshot; awaiting user validation.">◐ Pending Validation</span></td>
+          <td><span id="lmt-status-gms-microg-pipeline" class="status-badge status-green" data-tooltip="Live-verified 2026-10-14: microG 0.3.17.252432 injected; Doze whitelist now re-applied every boot (Python + C#).">● Green — Validated</span></td>
         </tr>
         <tr id="lmt-gms-ui-exclusion">
           <td><code class="elem-id">lmt-gms-ui-exclusion</code></td>
           <td><strong>User-Facing Apps List Exclusion Filter (<code class="inline-code">microG</code> &amp; <code class="inline-code">com.android.vending</code>)</strong></td>
           <td><code class="inline-code">GmsInteropManager.IsExcludedInteropPackage</code> filters <code class="inline-code">com.google.android.gms</code>, <code class="inline-code">com.mgoogle.android.gms</code>, <code class="inline-code">org.microg.*</code>, <code class="inline-code">com.google.android.gsf</code>, and <code class="inline-code">com.android.vending</code> out of <code class="inline-code">LaForgeAppRegistry.DiscoverRememberedApps</code> and <code class="inline-code">filter_user_facing_packages</code> (<code class="inline-code">laforge_poc.py</code>).</td>
-          <td><span id="lmt-status-gms-ui-exclusion" class="status-badge status-yellow" data-tooltip="Implemented in LaForgeAppRegistry.cs and laforge_poc.py; awaiting user validation.">◐ Pending Validation</span></td>
+          <td><span id="lmt-status-gms-ui-exclusion" class="status-badge status-green" data-tooltip="Live-verified 2026-10-14: filter hides gms/microg/vending/gsf, keeps user apps.">● Green — Validated</span></td>
         </tr>
         <tr id="lmt-gms-vending-lvl-stub">
           <td><code class="elem-id">lmt-gms-vending-lvl-stub</code></td>
           <td><strong>Custom Headless <code class="inline-code">com.android.vending</code> LVL AIDL Stub (<code class="inline-code">0x0001 NOT_LICENSED</code>)</strong></td>
           <td>Built from source in <code class="inline-code">src/LaForge.VendingStub/</code> (<code class="inline-code">ILicensingService.aidl</code>, <code class="inline-code">ILicenseResultListener.aidl</code>, <code class="inline-code">LicensingStubService.java</code>) into <code class="inline-code">runtime/gms/vending-licensing-stub.apk</code>. Binds <code class="inline-code">com.android.vending.licensing.ILicensingService</code> and invokes <code class="inline-code">listener.verifyLicense(0x0001, null, null)</code> so free apps with Play LVL dependencies don't crash on <code class="inline-code">NullPointerException</code> while paid apps enforce standard <code class="inline-code">NOT_LICENSED</code> handling.</td>
-          <td><span id="lmt-status-gms-vending-lvl-stub" class="status-badge status-yellow" data-tooltip="Compiled, signed, and installed into Android 14 runtime with --force-queryable; awaiting user validation.">◐ Pending Validation</span></td>
+          <td><span id="lmt-status-gms-vending-lvl-stub" class="status-badge status-green" data-tooltip="Live-verified 2026-10-14: stub returns 0x0001 NOT_LICENSED to LVL client without crash.">● Green — Validated</span></td>
         </tr>
         <tr id="lmt-gms-console-controls">
           <td><code class="elem-id">lmt-gms-console-controls</code></td>
           <td><strong>Native Console <code class="inline-code">"microG &amp; Services"</code> Administrative Section</strong></td>
           <td>Dedicated panel inside <code class="inline-code">LaForgeConsoleWindow.cs</code> providing live <code class="inline-code">microG</code> + <code class="inline-code">Vending LVL Stub</code> telemetry, <strong>⚙ microG Settings</strong> button (spawns <code class="inline-code">org.microg.gms.ui.SettingsActivity</code> on an isolated <code class="inline-code">540x960</code> virtual display), <strong>🧹 Clear microG Data</strong> (<code class="inline-code">pm clear</code>), <strong>🔄 Re-Inject / Sync</strong>, and persistent boot-injection checkboxes (<code class="inline-code">gms_interop.conf</code>).</td>
-          <td><span id="lmt-status-gms-console-controls" class="status-badge status-yellow" data-tooltip="Implemented in LaForgeConsoleWindow.cs; awaiting user validation.">◐ Pending Validation</span></td>
+          <td><span id="lmt-status-gms-console-controls" class="status-badge status-green" data-tooltip="Live-verified 2026-10-14: microG Settings (with risk warning dialog), Clear Data, Re-Inject all work; GsfProxy + permission grants + Doze whitelist reapplied each boot; LVLClientTest returns NOT_LICENSED.">● Green — Validated</span></td>
         </tr>
       </tbody>
     </table>

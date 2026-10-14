@@ -196,10 +196,122 @@ def build_gms_preflight_commands(config: dict) -> list[list[str]]:
     return commands
 
 
+def apply_signature_spoofing_patch(
+    adb_path: str,
+    patched_services_jar: str = "runtime/gms/services_patched.jar",
+) -> None:
+    """
+    Task 2: Apply the headless AOSP signature spoofing patch (`services_patched.jar`)
+    BEFORE microG is injected via ADB.
+    """
+    jar_path = Path(patched_services_jar)
+    if not jar_path.is_file():
+        print(f"[LaForge Spoof] Warning: {jar_path} not found; skipping services.jar patch.")
+        return
+
+    active = subprocess.run(
+        [adb_path, "shell", "getprop", "debug.laforge.sigspoof_active"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    if active == "1":
+        return
+
+    print("[LaForge Spoof] Applying AOSP services.jar signature spoofing patch before microG injection...")
+    subprocess.run([adb_path, "root"], check=False, capture_output=True)
+    subprocess.run([adb_path, "wait-for-device"], check=True)
+    subprocess.run(
+        [adb_path, "push", str(jar_path), "/data/system/laforge_services.jar"],
+        check=True,
+    )
+
+    mount_cmd = (
+        "setenforce 0 2>/dev/null; "
+        "chmod 644 /data/system/laforge_services.jar; "
+        "chown root:root /data/system/laforge_services.jar; "
+        "chcon u:object_r:system_file:s0 /data/system/laforge_services.jar; "
+        "umount /system/framework/services.jar 2>/dev/null; "
+        "mount -o bind /data/system/laforge_services.jar /system/framework/services.jar; "
+        "/apex/com.android.art/bin/dex2oat64 "
+        "--dex-file=/system/framework/services.jar "
+        "--oat-file=/data/system/laforge_services.odex "
+        "--app-image-file=/data/system/laforge_services.art "
+        "--instruction-set=x86_64 --compiler-filter=verify 2>/dev/null || true; "
+        "chmod 644 /data/system/laforge_services.*; "
+        "chown root:root /data/system/laforge_services.*; "
+        "chcon u:object_r:system_file:s0 /data/system/laforge_services.*; "
+        "umount /system/framework/oat/x86_64/services.art 2>/dev/null; "
+        "umount /system/framework/oat/x86_64/services.odex 2>/dev/null; "
+        "umount /system/framework/oat/x86_64/services.vdex 2>/dev/null; "
+        "mount -o bind /data/system/laforge_services.art /system/framework/oat/x86_64/services.art; "
+        "mount -o bind /data/system/laforge_services.odex /system/framework/oat/x86_64/services.odex; "
+        "mount -o bind /data/system/laforge_services.vdex /system/framework/oat/x86_64/services.vdex; "
+        "setprop sys.boot_completed 0; stop; start"
+    )
+    subprocess.run([adb_path, "shell", mount_cmd], check=True)
+    wait_for_device(adb_path, timeout_sec=60)
+    subprocess.run(
+        [adb_path, "shell", "setprop", "debug.laforge.sigspoof_active", "1"],
+        check=False,
+    )
+
+
+def run_gms_post_injection_diagnostics(adb_path: str) -> dict:
+    """
+    Task 1: Diagnostic routine after injecting microG.
+    Polls `adb shell top -b -n 1 -m 5` and `adb logcat -d` for recurring
+    `SecurityException` tied to `com.google.android.gms` or `PackageManager`
+    rejecting signature claims, as well as `LaForgeSpoof` verification entries.
+    """
+    top_res = subprocess.run(
+        [adb_path, "shell", "top", "-b", "-n", "1", "-m", "5"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    top_output = (top_res.stdout or "").strip()
+
+    log_res = subprocess.run(
+        [
+            adb_path,
+            "shell",
+            "logcat -d -t 500 | grep -iE 'SecurityException|com\\.google\\.android\\.gms|PackageManager|FAKE_PACKAGE_SIGNATURE|LaForgeSpoof|LaForgeVendingStub'",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    log_lines = [line.strip() for line in (log_res.stdout or "").splitlines() if line.strip()]
+    sec_exceptions = [
+        line
+        for line in log_lines
+        if "SecurityException" in line
+        and ("com.google.android.gms" in line or "PackageManager" in line or "signature" in line.lower())
+    ]
+    spoof_hits = [line for line in log_lines if "LaForgeSpoof" in line]
+
+    print("\n================ [LaForge GMS Diagnostic Check] ================")
+    print("[1/2] Top 5 CPU Processes (adb shell top -b -n 1 -m 5):")
+    print(top_output)
+    print(f"\n[2/2] Signature Spoofing Events: {len(spoof_hits)} | GMS SecurityExceptions: {len(sec_exceptions)}")
+    for line in spoof_hits[-5:]:
+        print(f"  [SPOOF OK] {line}")
+    for line in sec_exceptions[-5:]:
+        print(f"  [SEC-EX]   {line}")
+    print("================================================================\n")
+
+    return {
+        "top_output": top_output,
+        "security_exceptions": sec_exceptions,
+        "spoof_events": spoof_hits,
+    }
+
+
 def execute_gms_preflight_injection(config: dict, force_reconcile: bool = False) -> None:
     """
-    Silently push/install microG Services Core and Custom Vending Stub (`com.android.vending`)
-    during the initial emulator environment setup (or uninstall them if toggled off).
+    Apply signature spoofing patch FIRST, then silently push/install microG Services Core
+    and Custom Vending Stub (`com.android.vending`), followed by diagnostic verification.
     """
     adb = config["runtime"]["adb_path"]
     gms_cfg = config.get("gms_interop", {})
@@ -208,6 +320,11 @@ def execute_gms_preflight_injection(config: dict, force_reconcile: bool = False)
 
     microg_apk = Path(gms_cfg.get("microg_apk_path", "runtime/gms/microg-gms-core.apk"))
     vending_apk = Path(gms_cfg.get("vending_stub_apk_path", "runtime/gms/vending-licensing-stub.apk"))
+    patched_jar = gms_cfg.get("patched_services_jar_path", "runtime/gms/services_patched.jar")
+
+    # 0. Apply AOSP Signature Spoofing Patch BEFORE injecting microG
+    if inject_microg or inject_vending:
+        apply_signature_spoofing_patch(adb, patched_jar)
 
     # 1. Reconcile microG Services Core
     if inject_microg and microg_apk.is_file():
@@ -220,12 +337,26 @@ def execute_gms_preflight_injection(config: dict, force_reconcile: bool = False)
                 [adb, "install", "-r", "-g", "--force-queryable", str(microg_apk)],
                 check=True,
             )
-            for pkg in ("com.google.android.gms", "com.mgoogle.android.gms"):
-                if is_package_installed(adb, pkg):
-                    subprocess.run(
-                        [adb, "shell", "dumpsys", "deviceidle", "whitelist", f"+{pkg}"],
-                        check=False,
-                    )
+        for pkg in ("com.google.android.gms", "com.mgoogle.android.gms"):
+            if is_package_installed(adb, pkg):
+                subprocess.run(
+                    [adb, "shell", "dumpsys", "deviceidle", "whitelist", f"+{pkg}"],
+                    check=False,
+                )
+                subprocess.run(
+                    [adb, "shell", "pm", "grant", pkg, "android.permission.FAKE_PACKAGE_SIGNATURE"],
+                    check=False,
+                )
+        if not is_package_installed(adb, "com.google.android.gsf"):
+            gsf_apk = microg_apk.parent / "gsf-proxy.apk"
+            if gsf_apk.is_file():
+                subprocess.run([adb, "install", "-r", "-g", str(gsf_apk)], check=False)
+        for perm in ("POST_NOTIFICATIONS", "GET_ACCOUNTS", "READ_PHONE_STATE", "ACCESS_FINE_LOCATION",
+                     "ACCESS_COARSE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "READ_CONTACTS"):
+            subprocess.run(
+                [adb, "shell", "pm", "grant", "com.google.android.gms", f"android.permission.{perm}"],
+                check=False,
+            )
     elif not inject_microg:
         for pkg in ("com.google.android.gms", "com.mgoogle.android.gms", "org.microg.gms"):
             if is_package_installed(adb, pkg):
@@ -238,9 +369,16 @@ def execute_gms_preflight_injection(config: dict, force_reconcile: bool = False)
                 [adb, "install", "-r", "-g", "--force-queryable", str(vending_apk)],
                 check=True,
             )
+            subprocess.run(
+                [adb, "shell", "pm", "grant", "com.android.vending", "android.permission.FAKE_PACKAGE_SIGNATURE"],
+                check=False,
+            )
     elif not inject_vending:
         if is_package_installed(adb, "com.android.vending"):
             subprocess.run([adb, "uninstall", "com.android.vending"], check=False)
+
+    # 3. Run Post-Injection Diagnostic Check (CPU top 5 + Logcat SecurityException / Spoof check)
+    run_gms_post_injection_diagnostics(adb)
 
 
 def build_microg_settings_intent_command(

@@ -1291,9 +1291,24 @@ public static class Program
         using var proc = Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start process: {fileName}");
         var outTask = proc.StandardOutput.ReadToEndAsync();
         var errTask = proc.StandardError.ReadToEndAsync();
-        proc.WaitForExit(timeoutMs);
-        string stdout = outTask.GetAwaiter().GetResult();
-        string stderr = errTask.GetAwaiter().GetResult();
+        if (!proc.WaitForExit(timeoutMs))
+        {
+            try
+            {
+                proc.Kill(entireProcessTree: true);
+            }
+            catch
+            {
+                // Ignore kill errors
+            }
+            Task.WaitAll(new Task[] { outTask, errTask }, 500);
+            string partialOut = outTask.IsCompletedSuccessfully ? outTask.Result : "";
+            string partialErr = errTask.IsCompletedSuccessfully ? errTask.Result : "";
+            return string.IsNullOrWhiteSpace(partialOut) ? partialErr : partialOut;
+        }
+        Task.WaitAll(new Task[] { outTask, errTask }, 2000);
+        string stdout = outTask.IsCompletedSuccessfully ? outTask.Result : "";
+        string stderr = errTask.IsCompletedSuccessfully ? errTask.Result : "";
         return string.IsNullOrWhiteSpace(stdout) ? stderr : stdout;
     }
 
@@ -1314,10 +1329,22 @@ public static class Program
         using var proc = Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start process: {fileName}");
         var outTask = proc.StandardOutput.ReadToEndAsync();
         var errTask = proc.StandardError.ReadToEndAsync();
-        proc.WaitForExit(120000);
+        if (!proc.WaitForExit(120000))
+        {
+            try
+            {
+                proc.Kill(entireProcessTree: true);
+            }
+            catch
+            {
+                // Ignore
+            }
+            throw new TimeoutException($"{fileName} timed out after 120s.");
+        }
+        Task.WaitAll(new Task[] { outTask, errTask }, 2000);
         if (proc.ExitCode != 0)
         {
-            string err = errTask.GetAwaiter().GetResult();
+            string err = errTask.IsCompletedSuccessfully ? errTask.Result : "";
             throw new InvalidOperationException($"{fileName} exited with code {proc.ExitCode}: {err}");
         }
     }

@@ -46,7 +46,8 @@ public static class GmsInteropManager
         "app.revanced.android.gms",
         "com.google.android.gsf",
         "com.mgoogle.android.gsf",
-        "com.android.vending"
+        "com.android.vending",
+        "com.speedsoftware.rootexplorer"
     };
 
     public static readonly string[] CandidateMicroGPackages =
@@ -188,6 +189,150 @@ public static class GmsInteropManager
     }
 
     /// <summary>
+    /// Applies the headless AOSP Android 14 (API 34) signature spoofing patch (`runtime/gms/services_patched.jar`)
+    /// to `/system/framework/services.jar` via `adb root` + bind-mount BEFORE microG is injected.
+    /// </summary>
+    public static void ApplySignatureSpoofingPatch(
+        string adbExe,
+        string? baseDir = null,
+        Action<string>? logger = null)
+    {
+        try
+        {
+            string activeProp = Program.RunProcessCaptureOutput(
+                adbExe,
+                new[] { "shell", "getprop", "debug.laforge.sigspoof_active" },
+                2500).Trim();
+            if (activeProp == "1")
+            {
+                return;
+            }
+
+            // Check if `/data/system/laforge_services.jar` is already mounted over `/system/framework/services.jar`
+            string mountCheck = Program.RunProcessCaptureOutput(
+                adbExe,
+                new[] { "shell", "mount | grep '/system/framework/services.jar'" },
+                2500).Trim();
+            if (mountCheck.Contains("/system/framework/services.jar", StringComparison.OrdinalIgnoreCase))
+            {
+                Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "setenforce 0 2>/dev/null; setprop debug.laforge.sigspoof_active 1" }, 2000);
+                return;
+            }
+
+            string patchedJar = ResolveGmsAssetPath(baseDir, @"runtime\gms\services_patched.jar");
+            if (!File.Exists(patchedJar))
+            {
+                return;
+            }
+
+            logger?.Invoke("[GMS Interop] Applying AOSP services.jar signature spoofing patch before microG injection...");
+            Program.RunProcessCaptureOutput(adbExe, new[] { "root" }, 8000);
+            Program.RunProcessCaptureOutput(adbExe, new[] { "wait-for-device" }, 10000);
+            Program.RunProcessCaptureOutput(adbExe, new[] { "push", patchedJar, "/data/system/laforge_services.jar" }, 25000);
+
+            string mountCmd =
+                "setenforce 0 2>/dev/null; " +
+                "chmod 644 /data/system/laforge_services.jar; " +
+                "chown root:root /data/system/laforge_services.jar; " +
+                "chcon u:object_r:system_file:s0 /data/system/laforge_services.jar; " +
+                "umount /system/framework/services.jar 2>/dev/null; " +
+                "mount -o bind /data/system/laforge_services.jar /system/framework/services.jar; " +
+                "if [ ! -f /data/system/laforge_services.odex ]; then " +
+                "  /apex/com.android.art/bin/dex2oat64 --dex-file=/system/framework/services.jar " +
+                "    --oat-file=/data/system/laforge_services.odex " +
+                "    --app-image-file=/data/system/laforge_services.art " +
+                "    --instruction-set=x86_64 --compiler-filter=verify 2>/dev/null; " +
+                "fi; " +
+                "chmod 644 /data/system/laforge_services.*; " +
+                "chown root:root /data/system/laforge_services.*; " +
+                "chcon u:object_r:system_file:s0 /data/system/laforge_services.*; " +
+                "umount /system/framework/oat/x86_64/services.art 2>/dev/null; " +
+                "umount /system/framework/oat/x86_64/services.odex 2>/dev/null; " +
+                "umount /system/framework/oat/x86_64/services.vdex 2>/dev/null; " +
+                "mount -o bind /data/system/laforge_services.art /system/framework/oat/x86_64/services.art; " +
+                "mount -o bind /data/system/laforge_services.odex /system/framework/oat/x86_64/services.odex; " +
+                "mount -o bind /data/system/laforge_services.vdex /system/framework/oat/x86_64/services.vdex; " +
+                "setprop sys.boot_completed 0; stop; start";
+
+            Program.RunProcessCaptureOutput(adbExe, new[] { "shell", mountCmd }, 25000);
+
+            DateTime deadline = DateTime.UtcNow.AddSeconds(45);
+            while (DateTime.UtcNow < deadline)
+            {
+                string boot = Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "getprop", "sys.boot_completed" }, 3000).Trim();
+                if (boot == "1")
+                {
+                    Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "setprop", "debug.laforge.sigspoof_active", "1" }, 2000);
+                    logger?.Invoke("[GMS Interop] AOSP signature spoofing active (LaForgeSpoof enabled in system_server).");
+                    break;
+                }
+                Thread.Sleep(1000);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger?.Invoke($"[GMS Spoof Warning] {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Diagnostic check after microG injection: polls `adb shell top -b -n 1 -m 5` and `adb logcat -d`
+    /// to verify signature spoofing (`LaForgeSpoof`) and detect any `SecurityException` tied to
+    /// `com.google.android.gms` or `PackageManager`.
+    /// </summary>
+    public static void RunPostInjectionDiagnostics(string adbExe, Action<string>? logger = null)
+    {
+        try
+        {
+            string topOut = Program.RunProcessCaptureOutput(
+                adbExe,
+                new[] { "shell", "top", "-b", "-n", "1", "-m", "5" },
+                5000).Trim();
+
+            string logOut = Program.RunProcessCaptureOutput(
+                adbExe,
+                new[] { "shell", "logcat", "-d", "-t", "300" },
+                5000);
+
+            int spoofCount = 0;
+            var secExceptions = new List<string>();
+            foreach (string rawLine in logOut.Split('\n'))
+            {
+                string line = rawLine.Trim();
+                if (line.Contains("LaForgeSpoof", StringComparison.OrdinalIgnoreCase))
+                {
+                    spoofCount++;
+                }
+                else if (line.Contains("SecurityException", StringComparison.OrdinalIgnoreCase) &&
+                         (line.Contains("com.google.android.gms", StringComparison.OrdinalIgnoreCase) ||
+                          line.Contains("PackageManager", StringComparison.OrdinalIgnoreCase) ||
+                          line.Contains("signature", StringComparison.OrdinalIgnoreCase)))
+                {
+                    secExceptions.Add(line);
+                }
+            }
+
+            logger?.Invoke($"[GMS Diagnostics] Spoof events={spoofCount}, GMS SecurityExceptions={secExceptions.Count}");
+            if (!string.IsNullOrWhiteSpace(topOut))
+            {
+                string firstCpuLine = topOut.Split('\n').FirstOrDefault(l => l.Contains("%cpu", StringComparison.OrdinalIgnoreCase))?.Trim() ?? "";
+                if (!string.IsNullOrEmpty(firstCpuLine))
+                {
+                    logger?.Invoke($"[GMS Diagnostics] CPU Summary: {firstCpuLine}");
+                }
+            }
+            foreach (string sec in secExceptions.TakeLast(3))
+            {
+                logger?.Invoke($"[GMS SecurityException] {sec}");
+            }
+        }
+        catch
+        {
+            // Non-fatal diagnostic check
+        }
+    }
+
+    /// <summary>
     /// Pre-flight routine to silently push/install (or disable when toggled off) microG Services Core
     /// and the headless com.android.vending LVL stub (0x0001 NOT_LICENSED) during initial AVD setup.
     /// </summary>
@@ -220,6 +365,12 @@ public static class GmsInteropManager
             string microGApk = ResolveGmsAssetPath(baseDir, cfg.MicroGApkRelativePath);
             string vendingApk = ResolveGmsAssetPath(baseDir, cfg.VendingStubApkRelativePath);
 
+            // 0. Ensure AOSP signature spoofing patch is active BEFORE microG injection
+            if (cfg.InjectMicroGOnBoot || cfg.InjectVendingStubOnBoot)
+            {
+                ApplySignatureSpoofingPatch(adbExe, baseDir, logger);
+            }
+
             // 1. Reconcile microG Services Core
             if (cfg.InjectMicroGOnBoot)
             {
@@ -251,9 +402,26 @@ public static class GmsInteropManager
                         "shell",
                         "pm enable com.google.android.gms 2>/dev/null; " +
                         "pm enable com.mgoogle.android.gms 2>/dev/null; " +
+                        "pm grant com.google.android.gms android.permission.FAKE_PACKAGE_SIGNATURE 2>/dev/null; " +
+                        "dumpsys deviceidle whitelist +com.google.android.gms 2>/dev/null; " +
+                        "dumpsys deviceidle whitelist +com.mgoogle.android.gms 2>/dev/null; " +
+                        "for p in POST_NOTIFICATIONS GET_ACCOUNTS READ_PHONE_STATE ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION ACCESS_BACKGROUND_LOCATION READ_CONTACTS; do " +
+                        "pm grant com.google.android.gms android.permission.$p 2>/dev/null; done; " +
                         "cmd appops set com.google.android.gms SYSTEM_ALERT_WINDOW allow 2>/dev/null"
                     },
                     4000);
+
+                // GsfProxy (com.google.android.gsf) is required by microG's self-test.
+                string gsfApk = Path.Combine(Path.GetDirectoryName(microGApk) ?? baseDir, "gsf-proxy.apk");
+                string gsfInstalled = Program.RunProcessCaptureOutput(
+                    adbExe,
+                    new[] { "shell", "pm path com.google.android.gsf 2>/dev/null" },
+                    4000).Trim();
+                if (!gsfInstalled.Contains("package:", StringComparison.OrdinalIgnoreCase) && File.Exists(gsfApk))
+                {
+                    logger?.Invoke("[GMS Interop] Installing GsfProxy (com.google.android.gsf)...");
+                    Program.RunProcessCaptureOutput(adbExe, new[] { "install", "-r", "-g", gsfApk }, 30000);
+                }
             }
             else
             {
@@ -291,7 +459,12 @@ public static class GmsInteropManager
 
                 Program.RunProcessCaptureOutput(
                     adbExe,
-                    new[] { "shell", "pm enable com.android.vending 2>/dev/null" },
+                    new[]
+                    {
+                        "shell",
+                        "pm enable com.android.vending 2>/dev/null; " +
+                        "pm grant com.android.vending android.permission.FAKE_PACKAGE_SIGNATURE 2>/dev/null"
+                    },
                     3500);
             }
             else
@@ -302,6 +475,9 @@ public static class GmsInteropManager
                     new[] { "shell", "pm disable-user --user 0 com.android.vending 2>/dev/null" },
                     3500);
             }
+
+            // 3. Run Post-Injection Diagnostic Check (CPU top 5 + Logcat SecurityException / Spoof check)
+            RunPostInjectionDiagnostics(adbExe, logger);
 
             Program.RunProcessCaptureOutput(
                 adbExe,
