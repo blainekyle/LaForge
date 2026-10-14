@@ -32,6 +32,9 @@ public sealed class LaForgeWindow : Form
     private int _allocatedDisplayId = -1;
     private bool _isCheckingCrossApp;
     private LaForgeAppRegistry.RECT _lastKnownScrcpyBounds;
+    private AppPolicyConfig? _activePolicy;
+    private int _currentVdWidth = 1280;
+    private int _currentVdHeight = 720;
 
     public LaForgeWindow(LaForgeConfig config, string configPath, string configDir, string? initialRelayFile)
     {
@@ -597,7 +600,7 @@ public sealed class LaForgeWindow : Form
                     });
 
                     _splashOverlay?.DismissSafe();
-                    StartCrossAppBreakoutMonitor(adbExe);
+                    StartCrossAppBreakoutMonitor(adbExe, appPolicy);
 
                     // Start Host Folder Bridge asynchronously after display is bound
                     _hostBridge?.Dispose();
@@ -664,9 +667,12 @@ public sealed class LaForgeWindow : Form
         }
     }
 
-    private void StartCrossAppBreakoutMonitor(string adbExe)
+    private void StartCrossAppBreakoutMonitor(string adbExe, AppPolicyConfig appPolicy)
     {
         if (_allocatedDisplayId <= 0 || string.IsNullOrWhiteSpace(_config.App.PackageName)) return;
+
+        _activePolicy = appPolicy;
+        (_currentVdWidth, _currentVdHeight) = appPolicy.GetEffectiveScreenSize(_config.Display.Window);
 
         if (_activeScrcpyProcess != null && !_activeScrcpyProcess.HasExited)
         {
@@ -698,6 +704,42 @@ public sealed class LaForgeWindow : Form
             {
                 // Continuously record the user's current window size and position while our own app or system chooser is active
                 LaForgeAppRegistry.TryGetWindowBoundsByPid(scrcpyPid, out _lastKnownScrcpyBounds);
+
+                // If the app is window-able and dynamic aspect resizing is enabled, sync virtual display aspect ratio when user finishes resizing the window
+                if ((_activePolicy?.IsWindowable ?? true) &&
+                    (_activePolicy?.DynamicAspectResize ?? true) &&
+                    !LaForgeAppRegistry.IsLeftMouseButtonDown() &&
+                    LaForgeAppRegistry.TryGetClientBoundsByPid(scrcpyPid, out var clientRect) &&
+                    clientRect.Width >= 240 && clientRect.Height >= 240)
+                {
+                    double winAspect = (double)clientRect.Width / clientRect.Height;
+                    double vdAspect = (double)_currentVdWidth / Math.Max(1, _currentVdHeight);
+                    bool aspectChanged = Math.Abs(winAspect - vdAspect) > 0.06 &&
+                                         (Math.Abs(clientRect.Width - _currentVdWidth) > 24 ||
+                                          Math.Abs(clientRect.Height - _currentVdHeight) > 24);
+                    if (aspectChanged)
+                    {
+                        int newW = AppPolicyConfig.AlignTo8(Math.Clamp(clientRect.Width, 240, 3840));
+                        int newH = AppPolicyConfig.AlignTo8(Math.Clamp(clientRect.Height, 240, 2160));
+                        var userOuterBounds = _lastKnownScrcpyBounds;
+                        _currentVdWidth = newW;
+                        _currentVdHeight = newH;
+
+                        await Task.Run(() =>
+                        {
+                            Program.RunProcessCaptureOutput(
+                                adbExe,
+                                new[] { "shell", $"wm size {newW}x{newH} -d {_allocatedDisplayId}" },
+                                2500);
+                        });
+
+                        if (userOuterBounds.Width >= 100 && userOuterBounds.Height >= 100)
+                        {
+                            await Task.Delay(150);
+                            LaForgeAppRegistry.TryRestoreWindowBoundsByPid(scrcpyPid, userOuterBounds);
+                        }
+                    }
+                }
                 return;
             }
 

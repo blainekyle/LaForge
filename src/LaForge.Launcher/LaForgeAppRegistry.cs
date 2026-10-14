@@ -23,6 +23,54 @@ public sealed class AppPolicyConfig
     public bool MuteMic { get; set; }
     public bool BlockHid { get; set; }
     public bool HostShareEnabled { get; set; } = true;
+
+    // Windowing, Orientation & Screen Size Customization (Phase 5)
+    public string PreferredOrientation { get; set; } = "unspecified"; // "portrait", "landscape", or "unspecified"
+    public bool IsWindowable { get; set; } = true; // true if resizeableActivity=true / supports arbitrary multi-window aspect ratios
+    public string PreferredScreenSize { get; set; } = "1280x720";
+    public List<string> SupportedScreenSizes { get; set; } = new();
+    public string ScreenSizeOverride { get; set; } = ""; // Empty = use PreferredScreenSize; otherwise "WxH"
+    public bool DynamicAspectResize { get; set; } = true; // Allow live aspect-ratio resizing while open for window-able apps
+
+    public (int Width, int Height) GetEffectiveScreenSize(WindowConfig? fallback = null)
+    {
+        string raw = !string.IsNullOrWhiteSpace(ScreenSizeOverride)
+            ? ScreenSizeOverride
+            : (!string.IsNullOrWhiteSpace(PreferredScreenSize)
+                ? PreferredScreenSize
+                : (PreferredOrientation.Equals("portrait", StringComparison.OrdinalIgnoreCase) ? "540x960" : "1280x720"));
+
+        if (TryParseDimensions(raw, out int w, out int h))
+        {
+            return (AlignTo8(Math.Clamp(w, 240, 7680)), AlignTo8(Math.Clamp(h, 240, 4320)));
+        }
+
+        if (fallback != null && fallback.Width >= 240 && fallback.Height >= 240)
+        {
+            if (PreferredOrientation.Equals("portrait", StringComparison.OrdinalIgnoreCase) && fallback.Width > fallback.Height)
+            {
+                return (540, 960);
+            }
+            return (AlignTo8(fallback.Width), AlignTo8(fallback.Height));
+        }
+
+        return PreferredOrientation.Equals("portrait", StringComparison.OrdinalIgnoreCase) ? (540, 960) : (1280, 720);
+    }
+
+    public static bool TryParseDimensions(string? input, out int width, out int height)
+    {
+        width = 0;
+        height = 0;
+        if (string.IsNullOrWhiteSpace(input)) return false;
+        var m = Regex.Match(input.Trim(), @"(\d{3,4})\s*[xX×]\s*(\d{3,4})");
+        if (!m.Success) return false;
+        return int.TryParse(m.Groups[1].Value, out width) &&
+               int.TryParse(m.Groups[2].Value, out height) &&
+               width >= 200 && width <= 7680 &&
+               height >= 200 && height <= 4320;
+    }
+
+    public static int AlignTo8(int val) => Math.Max(200, (val + 4) & ~7);
 }
 
 public sealed class AppNotificationItem
@@ -111,6 +159,12 @@ public static class LaForgeAppRegistry
     private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
     [DllImport("user32.dll")]
+    private static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
+
+    [DllImport("user32.dll")]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
     [StructLayout(LayoutKind.Sequential)]
@@ -127,10 +181,13 @@ public static class LaForgeAppRegistry
     private const int SW_HIDE = 0;
     private const int SW_SHOW = 5;
     private const int SW_RESTORE = 9;
+    private const int VK_LBUTTON = 0x01;
     private const uint SWP_NOZORDER = 0x0004;
     private const uint SWP_NOACTIVATE = 0x0010;
 
     public sealed record ScrcpyWindowInfo(IntPtr Hwnd, int ProcessId, string Title, bool IsVisible);
+
+    public static bool IsLeftMouseButtonDown() => (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
 
     public static bool TryGetWindowBoundsByPid(int scrcpyPid, out RECT rect)
     {
@@ -139,6 +196,15 @@ public static class LaForgeAppRegistry
         var win = FindAllScrcpyWindows().FirstOrDefault(w => w.ProcessId == scrcpyPid);
         if (win == null || win.Hwnd == IntPtr.Zero) return false;
         return GetWindowRect(win.Hwnd, out rect) && rect.Width >= 100 && rect.Height >= 100;
+    }
+
+    public static bool TryGetClientBoundsByPid(int scrcpyPid, out RECT clientRect)
+    {
+        clientRect = default;
+        if (scrcpyPid <= 0) return false;
+        var win = FindAllScrcpyWindows().FirstOrDefault(w => w.ProcessId == scrcpyPid);
+        if (win == null || win.Hwnd == IntPtr.Zero) return false;
+        return GetClientRect(win.Hwnd, out clientRect) && clientRect.Width >= 100 && clientRect.Height >= 100;
     }
 
     public static bool TryRestoreWindowBoundsByPid(int scrcpyPid, RECT rect)
@@ -309,8 +375,67 @@ public static class LaForgeAppRegistry
             policy.IconPath = iconCandidate;
         }
 
+        EnsureManifestWindowingProfile(policy, config.App.ApkPath);
         Save(policy);
         return policy;
+    }
+
+    public static void EnsureManifestWindowingProfile(AppPolicyConfig policy, string? configuredApkPath = null)
+    {
+        if (policy.SupportedScreenSizes.Count > 0 && !string.IsNullOrWhiteSpace(policy.PreferredScreenSize))
+        {
+            return;
+        }
+
+        try
+        {
+            string? apkPath = null;
+            if (!string.IsNullOrWhiteSpace(configuredApkPath))
+            {
+                apkPath = Path.IsPathRooted(configuredApkPath)
+                    ? configuredApkPath
+                    : (!string.IsNullOrWhiteSpace(policy.BundleDir)
+                        ? Path.GetFullPath(Path.Combine(policy.BundleDir, configuredApkPath))
+                        : Path.GetFullPath(configuredApkPath));
+            }
+            if ((string.IsNullOrWhiteSpace(apkPath) || !File.Exists(apkPath)) && !string.IsNullOrWhiteSpace(policy.BundleDir))
+            {
+                string candidate = Path.Combine(policy.BundleDir, "payload.apk");
+                if (File.Exists(candidate)) apkPath = candidate;
+            }
+
+            if (!string.IsNullOrWhiteSpace(apkPath) && File.Exists(apkPath))
+            {
+                var meta = ApkManifestParser.ParseApk(apkPath);
+                policy.PreferredOrientation = meta.PreferredOrientation;
+                policy.IsWindowable = meta.IsWindowable;
+                policy.PreferredScreenSize = meta.PreferredScreenSize;
+                policy.SupportedScreenSizes = new List<string>(meta.SupportedScreenSizes);
+                if (!policy.IsWindowable)
+                {
+                    policy.DynamicAspectResize = false;
+                }
+                Save(policy);
+                return;
+            }
+        }
+        catch
+        {
+            // Fallback to defaults if APK is not accessible
+        }
+
+        if (policy.SupportedScreenSizes.Count == 0)
+        {
+            var fallbackMeta = new ApkMetadata
+            {
+                PackageName = policy.PackageName,
+                PreferredOrientation = policy.PreferredOrientation,
+                IsWindowable = policy.IsWindowable
+            };
+            ApkManifestParser.PopulateScreenSizeProfile(fallbackMeta);
+            policy.PreferredScreenSize = fallbackMeta.PreferredScreenSize;
+            policy.SupportedScreenSizes = fallbackMeta.SupportedScreenSizes;
+        }
     }
 
     public static void RecordAppLaunch(LaForgeConfig config, string bundleDir, int scrcpyPid = 0)
@@ -349,6 +474,14 @@ public static class LaForgeAppRegistry
         sb.AppendLine($"mute_mic={policy.MuteMic.ToString().ToLowerInvariant()}");
         sb.AppendLine($"block_hid={policy.BlockHid.ToString().ToLowerInvariant()}");
         sb.AppendLine($"host_share_enabled={policy.HostShareEnabled.ToString().ToLowerInvariant()}");
+        sb.AppendLine();
+        sb.AppendLine("# Windowing, Orientation & Screen Size Customization");
+        sb.AppendLine($"preferred_orientation={policy.PreferredOrientation}");
+        sb.AppendLine($"is_windowable={policy.IsWindowable.ToString().ToLowerInvariant()}");
+        sb.AppendLine($"preferred_screen_size={policy.PreferredScreenSize}");
+        sb.AppendLine($"supported_screen_sizes={string.Join('|', policy.SupportedScreenSizes)}");
+        sb.AppendLine($"screen_size_override={policy.ScreenSizeOverride}");
+        sb.AppendLine($"dynamic_aspect_resize={policy.DynamicAspectResize.ToString().ToLowerInvariant()}");
 
         File.WriteAllText(confPath, sb.ToString(), Encoding.UTF8);
     }
@@ -390,6 +523,21 @@ public static class LaForgeAppRegistry
                 case "mute_mic": policy.MuteMic = ParseBool(val, false); break;
                 case "block_hid": policy.BlockHid = ParseBool(val, false); break;
                 case "host_share_enabled": policy.HostShareEnabled = ParseBool(val, true); break;
+                case "preferred_orientation":
+                    if (!string.IsNullOrWhiteSpace(val)) policy.PreferredOrientation = val;
+                    break;
+                case "is_windowable": policy.IsWindowable = ParseBool(val, true); break;
+                case "preferred_screen_size":
+                    if (!string.IsNullOrWhiteSpace(val)) policy.PreferredScreenSize = val;
+                    break;
+                case "supported_screen_sizes":
+                    if (!string.IsNullOrWhiteSpace(val))
+                    {
+                        policy.SupportedScreenSizes = val.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+                    }
+                    break;
+                case "screen_size_override": policy.ScreenSizeOverride = val; break;
+                case "dynamic_aspect_resize": policy.DynamicAspectResize = ParseBool(val, true); break;
             }
         }
 
@@ -398,6 +546,7 @@ public static class LaForgeAppRegistry
             policy.ActivityName = ApkManifestParser.ResolveDirectActivity(policy.PackageName, policy.ActivityName);
         }
 
+        EnsureManifestWindowingProfile(policy);
         return policy;
     }
 

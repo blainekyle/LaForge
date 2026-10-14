@@ -98,8 +98,8 @@ public static class ApkPackager
                 {
                     X = 140,
                     Y = 140,
-                    Width = 1280,
-                    Height = 720,
+                    Width = AppPolicyConfig.TryParseDimensions(meta.PreferredScreenSize, out int pw, out int ph) ? pw : 1280,
+                    Height = AppPolicyConfig.TryParseDimensions(meta.PreferredScreenSize, out _, out int ph2) ? ph2 : 720,
                     Borderless = false,
                     AlwaysOnTop = false,
                     Fullscreen = false

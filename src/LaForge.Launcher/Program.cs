@@ -266,6 +266,10 @@ public static class Program
                 Console.WriteLine($"  Package Name      : {meta.PackageName}");
                 Console.WriteLine($"  Version           : {meta.VersionName} ({meta.VersionCode})");
                 Console.WriteLine($"  Launcher Activity : {meta.LauncherActivity}");
+                Console.WriteLine($"  Orientation       : {meta.PreferredOrientation}");
+                Console.WriteLine($"  Window-able       : {(meta.IsWindowable ? "Yes (Multi-Window Resizable)" : "No (Fixed Aspect Ratio)")}");
+                Console.WriteLine($"  Preferred Size    : {meta.PreferredScreenSize}");
+                Console.WriteLine($"  Supported Sizes   : {string.Join(" | ", meta.SupportedScreenSizes)}");
                 Console.WriteLine($"  Total Activities  : {meta.AllActivities.Count}");
                 Console.WriteLine($"  VIEW MIME Types   : {(meta.MimeTypes.Count > 0 ? string.Join(", ", meta.MimeTypes) : "(none declared)")}");
                 return 0;
@@ -843,13 +847,17 @@ public static class Program
             }
         }
 
+        var (effW, effH) = policy != null
+            ? policy.GetEffectiveScreenSize(win)
+            : (win.Width, win.Height);
+
         var list = new List<string>
         {
             titleArg,
             $"--window-x={winX}",
             $"--window-y={winY}",
-            $"--window-width={win.Width}",
-            $"--window-height={win.Height}"
+            $"--window-width={effW}",
+            $"--window-height={effH}"
         };
 
         if (!forExecution || !disp.RenderDriver.Equals("direct3d", StringComparison.OrdinalIgnoreCase))
@@ -881,7 +889,7 @@ public static class Program
             bool useVirtualDisplay = policy?.VirtualDisplay ?? true;
             if (useVirtualDisplay && !string.IsNullOrWhiteSpace(cfg.App.PackageName))
             {
-                list.Add($"--new-display={win.Width}x{win.Height}/160");
+                list.Add($"--new-display={effW}x{effH}/160");
                 list.Add("--no-vd-system-decorations");
                 if (policy?.BackgroundOnClose ?? false)
                 {

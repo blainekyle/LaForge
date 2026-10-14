@@ -661,7 +661,7 @@ public sealed class LaForgeConsoleWindow : Form
         using var dlg = new Form
         {
             Text = $"⚙ App Policy & Configuration — {policy.AppTitle} ({policy.PackageName})",
-            Size = new Size(560, 440),
+            Size = new Size(620, 620),
             StartPosition = FormStartPosition.CenterParent,
             FormBorderStyle = FormBorderStyle.FixedDialog,
             MaximizeBox = false,
@@ -676,7 +676,7 @@ public sealed class LaForgeConsoleWindow : Form
             Text = $"Config File: {confPath}",
             Font = new Font("Consolas", 8.5F, FontStyle.Regular),
             ForeColor = Color.FromArgb(140, 175, 220),
-            Location = new Point(20, 16),
+            Location = new Point(20, 14),
             AutoSize = true
         };
 
@@ -694,24 +694,235 @@ public sealed class LaForgeConsoleWindow : Form
             };
         }
 
-        var chkVd = MakeToggle("Launch on Isolated Virtual Display (scrcpy --new-display)", policy.VirtualDisplay, 55, Color.FromArgb(126, 231, 135));
-        var chkBg = MakeToggle("Background App When Window Closes (keep running in Android RAM)", policy.BackgroundOnClose, 92, Color.FromArgb(255, 205, 95));
-        var chkNet = MakeToggle("Block Network Access (Per-UID iptables REJECT & netpolicy blacklist)", policy.BlockNetwork, 129, Color.FromArgb(255, 140, 140));
-        var chkAudio = MakeToggle("Mute Audio Output (Android AppOps PLAY_AUDIO ignore)", policy.MuteAudio, 166, Color.FromArgb(255, 166, 87));
-        var chkMic = MakeToggle("Mute Microphone Input (Android AppOps RECORD_AUDIO ignore)", policy.MuteMic, 203, Color.FromArgb(255, 166, 87));
-        var chkHid = MakeToggle("Block HID / Mouse, Keyboard & Device Sensors (--no-control & AppOps)", policy.BlockHid, 240, Color.FromArgb(210, 168, 255));
-        var chkHost = MakeToggle("Enable Shared HOST Folder Mount (%LOCALAPPDATA%\\LaForge\\HOST <-> /sdcard/HOST)", policy.HostShareEnabled, 277, Color.FromArgb(105, 210, 255));
+        var chkVd = MakeToggle("Launch on Isolated Virtual Display (scrcpy --new-display)", policy.VirtualDisplay, 46, Color.FromArgb(126, 231, 135));
+        var chkBg = MakeToggle("Background App When Window Closes (keep running in Android RAM)", policy.BackgroundOnClose, 80, Color.FromArgb(255, 205, 95));
+        var chkNet = MakeToggle("Block Network Access (Per-UID iptables REJECT & netpolicy blacklist)", policy.BlockNetwork, 114, Color.FromArgb(255, 140, 140));
+        var chkAudio = MakeToggle("Mute Audio Output (Android AppOps PLAY_AUDIO ignore)", policy.MuteAudio, 148, Color.FromArgb(255, 166, 87));
+        var chkMic = MakeToggle("Mute Microphone Input (Android AppOps RECORD_AUDIO ignore)", policy.MuteMic, 182, Color.FromArgb(255, 166, 87));
+        var chkHid = MakeToggle("Block HID / Mouse, Keyboard & Device Sensors (--no-control & AppOps)", policy.BlockHid, 216, Color.FromArgb(210, 168, 255));
+        var chkHost = MakeToggle("Enable Shared HOST Folder Mount (%LOCALAPPDATA%\\LaForge\\HOST <-> /sdcard/HOST)", policy.HostShareEnabled, 250, Color.FromArgb(105, 210, 255));
 
-        var btnOpenConfFile = CreateButton("Open .conf in Notepad", Color.FromArgb(50, 58, 75), new Point(24, 335), new Size(175, 38));
+        // Windowing & Screen Size Customization Panel
+        var pnlWindowing = new Panel
+        {
+            Location = new Point(20, 286),
+            Size = new Size(564, 215),
+            BackColor = Color.FromArgb(28, 34, 46),
+            BorderStyle = BorderStyle.FixedSingle
+        };
+
+        var lblWinHeader = new Label
+        {
+            Text = "📐 Windowing, Orientation & Screen Size Customization",
+            Font = new Font("Segoe UI Semibold", 10F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(121, 192, 255),
+            Location = new Point(12, 10),
+            AutoSize = true
+        };
+
+        string modeDesc = policy.IsWindowable
+            ? "Window-able (Multi-Window Resizable)"
+            : $"Fixed Orientation ({policy.PreferredOrientation})";
+        var lblManifestProfile = new Label
+        {
+            Text = $"Polled APK Manifest:  Orientation = {policy.PreferredOrientation.ToUpperInvariant()}   |   {modeDesc}   |   Preferred = {policy.PreferredScreenSize}",
+            Font = new Font("Consolas", 8.25F, FontStyle.Regular),
+            ForeColor = Color.FromArgb(165, 214, 255),
+            Location = new Point(12, 34),
+            AutoSize = true
+        };
+
+        var lblPreset = new Label
+        {
+            Text = "Supported Sizes:",
+            Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular),
+            ForeColor = Color.FromArgb(210, 220, 235),
+            Location = new Point(12, 64),
+            AutoSize = true
+        };
+
+        var cmbPresets = new ComboBox
+        {
+            Location = new Point(122, 60),
+            Size = new Size(245, 26),
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            BackColor = Color.FromArgb(18, 22, 30),
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 9F, FontStyle.Regular)
+        };
+
+        string defaultOptionText = $"Default ({policy.PreferredScreenSize} — Manifest Preferred)";
+        cmbPresets.Items.Add(defaultOptionText);
+        foreach (string sz in policy.SupportedScreenSizes)
+        {
+            cmbPresets.Items.Add(sz);
+        }
+        const string customOptionText = "Custom Freetext Override (WxH) *";
+        cmbPresets.Items.Add(customOptionText);
+
+        var lblOverride = new Label
+        {
+            Text = "Override (WxH)*:",
+            Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular),
+            ForeColor = Color.FromArgb(255, 205, 95),
+            Location = new Point(378, 64),
+            AutoSize = true
+        };
+
+        var txtCustomSize = new TextBox
+        {
+            Location = new Point(480, 60),
+            Size = new Size(70, 26),
+            BackColor = Color.FromArgb(18, 22, 30),
+            ForeColor = Color.FromArgb(255, 225, 130),
+            BorderStyle = BorderStyle.FixedSingle,
+            Font = new Font("Consolas", 9.5F, FontStyle.Bold),
+            Text = policy.ScreenSizeOverride ?? ""
+        };
+
+        bool suppressPresetSync = false;
+        if (string.IsNullOrWhiteSpace(policy.ScreenSizeOverride))
+        {
+            cmbPresets.SelectedIndex = 0;
+        }
+        else
+        {
+            int matchedIndex = -1;
+            for (int i = 1; i < cmbPresets.Items.Count - 1; i++)
+            {
+                string itemText = cmbPresets.Items[i]?.ToString() ?? "";
+                if (itemText.StartsWith(policy.ScreenSizeOverride, StringComparison.OrdinalIgnoreCase))
+                {
+                    matchedIndex = i;
+                    break;
+                }
+            }
+            cmbPresets.SelectedIndex = matchedIndex >= 0 ? matchedIndex : cmbPresets.Items.Count - 1;
+        }
+
+        cmbPresets.SelectedIndexChanged += (_, _) =>
+        {
+            if (suppressPresetSync) return;
+            string selected = cmbPresets.SelectedItem?.ToString() ?? "";
+            suppressPresetSync = true;
+            if (selected == defaultOptionText)
+            {
+                txtCustomSize.Text = "";
+            }
+            else if (selected != customOptionText)
+            {
+                string token = selected.Split(' ')[0].Trim();
+                if (AppPolicyConfig.TryParseDimensions(token, out int pw, out int ph))
+                {
+                    txtCustomSize.Text = $"{pw}x{ph}";
+                }
+            }
+            else
+            {
+                txtCustomSize.Focus();
+            }
+            suppressPresetSync = false;
+        };
+
+        txtCustomSize.TextChanged += (_, _) =>
+        {
+            if (suppressPresetSync) return;
+            suppressPresetSync = true;
+            string raw = txtCustomSize.Text.Trim();
+            if (string.IsNullOrEmpty(raw))
+            {
+                cmbPresets.SelectedIndex = 0;
+            }
+            else
+            {
+                int matched = -1;
+                for (int i = 1; i < cmbPresets.Items.Count - 1; i++)
+                {
+                    string itemText = cmbPresets.Items[i]?.ToString() ?? "";
+                    if (itemText.StartsWith(raw + " ", StringComparison.OrdinalIgnoreCase) ||
+                        itemText.Equals(raw, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matched = i;
+                        break;
+                    }
+                }
+                cmbPresets.SelectedIndex = matched >= 0 ? matched : cmbPresets.Items.Count - 1;
+            }
+            suppressPresetSync = false;
+        };
+
+        var lblAsteriskWarn = new Label
+        {
+            Text = "* Compatibility Risk: Custom pixel sizes or aspect ratios outside the app's declared orientation\r\n  may cause UI layout clipping, stretching, or camera sensor preview distortion.",
+            Font = new Font("Segoe UI", 8.25F, FontStyle.Italic),
+            ForeColor = Color.FromArgb(240, 180, 90),
+            Location = new Point(12, 95),
+            Size = new Size(540, 34)
+        };
+
+        string dynamicResizeLabel = policy.IsWindowable
+            ? "Allow Live Aspect-Ratio Resizing While Open (App is Window-able)"
+            : "Force Live Aspect-Ratio Resizing While Open * (App declares fixed orientation)";
+        var chkDynamicResize = new CheckBox
+        {
+            Text = dynamicResizeLabel,
+            Checked = policy.DynamicAspectResize && policy.IsWindowable,
+            Location = new Point(14, 138),
+            AutoSize = true,
+            ForeColor = policy.IsWindowable ? Color.FromArgb(126, 231, 135) : Color.FromArgb(255, 205, 95),
+            Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular),
+            Cursor = Cursors.Hand
+        };
+
+        var lblDynamicHint = new Label
+        {
+            Text = "When enabled, dragging the window border to a new aspect ratio dynamically updates the Android\r\nvirtual display density/dimensions (wm size WxH -d <displayId>) after mouse release.",
+            Font = new Font("Segoe UI", 8F, FontStyle.Regular),
+            ForeColor = Color.FromArgb(150, 165, 190),
+            Location = new Point(32, 164),
+            Size = new Size(520, 34)
+        };
+
+        pnlWindowing.Controls.Add(lblWinHeader);
+        pnlWindowing.Controls.Add(lblManifestProfile);
+        pnlWindowing.Controls.Add(lblPreset);
+        pnlWindowing.Controls.Add(cmbPresets);
+        pnlWindowing.Controls.Add(lblOverride);
+        pnlWindowing.Controls.Add(txtCustomSize);
+        pnlWindowing.Controls.Add(lblAsteriskWarn);
+        pnlWindowing.Controls.Add(chkDynamicResize);
+        pnlWindowing.Controls.Add(lblDynamicHint);
+
+        var btnOpenConfFile = CreateButton("Open .conf in Notepad", Color.FromArgb(50, 58, 75), new Point(20, 520), new Size(185, 38));
         btnOpenConfFile.Click += (_, _) =>
         {
             LaForgeAppRegistry.Save(policy);
             Process.Start(new ProcessStartInfo { FileName = "notepad.exe", Arguments = $"\"{confPath}\"", UseShellExecute = true });
         };
 
-        var btnSave = CreateButton("Save && Apply Live", Color.FromArgb(35, 134, 54), new Point(345, 335), new Size(175, 38));
+        var btnSave = CreateButton("Save && Apply Live", Color.FromArgb(35, 134, 54), new Point(399, 520), new Size(185, 38));
         btnSave.Click += (_, _) =>
         {
+            string rawOverride = txtCustomSize.Text.Trim();
+            if (!string.IsNullOrEmpty(rawOverride))
+            {
+                if (!AppPolicyConfig.TryParseDimensions(rawOverride, out int ow, out int oh))
+                {
+                    MessageBox.Show(
+                        dlg,
+                        "Please enter a valid WxH pixel resolution (for example: 540x960, 1280x720, or 900x900) between 240 and 3840 pixels, or leave the field blank to use the manifest-preferred size.",
+                        "Invalid Screen Size Override",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+                policy.ScreenSizeOverride = $"{ow}x{oh}";
+            }
+            else
+            {
+                policy.ScreenSizeOverride = "";
+            }
+
             policy.VirtualDisplay = chkVd.Checked;
             policy.BackgroundOnClose = chkBg.Checked;
             policy.BlockNetwork = chkNet.Checked;
@@ -719,7 +930,39 @@ public sealed class LaForgeConsoleWindow : Form
             policy.MuteMic = chkMic.Checked;
             policy.BlockHid = chkHid.Checked;
             policy.HostShareEnabled = chkHost.Checked;
+            policy.DynamicAspectResize = chkDynamicResize.Checked;
             LaForgeAppRegistry.Save(policy);
+
+            // Sync BundleDir/config.json Window dimensions so direct .exe launches also use the effective size
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(policy.BundleDir))
+                {
+                    string bundleCfgPath = Path.Combine(policy.BundleDir, "config.json");
+                    if (File.Exists(bundleCfgPath))
+                    {
+                        var jsonOpts = new System.Text.Json.JsonSerializerOptions
+                        {
+                            PropertyNameCaseInsensitive = true,
+                            ReadCommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+                            WriteIndented = true
+                        };
+                        var bundleCfg = System.Text.Json.JsonSerializer.Deserialize<LaForgeConfig>(File.ReadAllText(bundleCfgPath), jsonOpts);
+                        if (bundleCfg != null)
+                        {
+                            var (effW, effH) = policy.GetEffectiveScreenSize(bundleCfg.Display.Window);
+                            bundleCfg.Display.Window.Width = effW;
+                            bundleCfg.Display.Window.Height = effH;
+                            File.WriteAllText(bundleCfgPath, System.Text.Json.JsonSerializer.Serialize(bundleCfg, jsonOpts));
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore config.json sync failure
+            }
+
             dlg.DialogResult = DialogResult.OK;
             dlg.Close();
         };
@@ -732,12 +975,28 @@ public sealed class LaForgeConsoleWindow : Form
         dlg.Controls.Add(chkMic);
         dlg.Controls.Add(chkHid);
         dlg.Controls.Add(chkHost);
+        dlg.Controls.Add(pnlWindowing);
         dlg.Controls.Add(btnOpenConfFile);
         dlg.Controls.Add(btnSave);
 
         if (dlg.ShowDialog(this) == DialogResult.OK)
         {
-            await Task.Run(() => LaForgeAppRegistry.EnforcePoliciesOnGuest(_adbExe, policy, forceNetworkUpdate: true));
+            await Task.Run(() =>
+            {
+                LaForgeAppRegistry.EnforcePoliciesOnGuest(_adbExe, policy, forceNetworkUpdate: true);
+                if (File.Exists(_adbExe))
+                {
+                    var liveTel = LaForgeAppRegistry.QueryLiveTelemetry(_adbExe, new[] { policy });
+                    if (liveTel.TryGetValue(policy.PackageName, out var tel) && tel.VirtualDisplayId > 0)
+                    {
+                        var (effW, effH) = policy.GetEffectiveScreenSize();
+                        Program.RunProcessCaptureOutput(
+                            _adbExe,
+                            new[] { "shell", $"wm size {effW}x{effH} -d {tel.VirtualDisplayId}" },
+                            timeoutMs: 3000);
+                    }
+                }
+            });
             await RefreshTelemetryAsync();
         }
     }
@@ -807,8 +1066,15 @@ public sealed class LaForgeConsoleWindow : Form
 
     private static string FormatPolicySummary(AppPolicyConfig app)
     {
+        var (effW, effH) = app.GetEffectiveScreenSize();
+        string sizeLabel = !string.IsNullOrWhiteSpace(app.ScreenSizeOverride) ? $"{effW}x{effH}*" : $"{effW}x{effH}";
+        string winMode = app.IsWindowable
+            ? (app.DynamicAspectResize ? "Window-able" : "Fixed Ratio")
+            : app.PreferredOrientation;
+
         var tags = new List<string>
         {
+            $"📐 {sizeLabel} ({winMode})",
             app.VirtualDisplay ? "🖥 Virtual Display" : "🖥 Primary Display",
             app.BackgroundOnClose ? "🌙 Close->Background" : "✕ Close->Exit"
         };

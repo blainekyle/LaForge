@@ -293,10 +293,10 @@
       </p>
     </div>
     <div class="lmt-meta-box" id="lmt-meta-version">
-      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v0.7.7-camera-splash-and-window-pinning</span></div>
+      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v0.7.8-windowing-and-manifest-sizing</span></div>
       <div><strong>Target Runtime:</strong> Android 14 (API 34 x86_64 + WHPX)</div>
       <div><strong>Display Bridge:</strong> scrcpy v5.0.1 + SDL 3.4.18 (D3D11)</div>
-      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-14 12:10 CDT</span></div>
+      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-14 13:15 CDT</span></div>
     </div>
   </header>
 
@@ -321,7 +321,7 @@
       At <code class="inline-code">v0.4.2</code> (Step 203), the remaining roadmap was defined as <strong>Phase 5</strong> (Single-Window UX &amp; Bespoke EXEs), <strong>Phase 6</strong> (Live File Relay &amp; Windows Registry Associations), and <strong>Phase 7</strong> (Host Mic Input &amp; Graphical APK Builder).
       Subsequently, two major user-requested architectural milestones were injected ahead of the original Phase 6/7:
       (1) <strong>Bidirectional <code class="inline-code">/sdcard/HOST</code> Filesystem Bridge</strong> (<code class="inline-code">v0.5.0</code>) and
-      (2) <strong>Concurrent Multi-Display Virtual Screen Isolation &amp; LaForge Central Console</strong> (<code class="inline-code">v0.7.0–v0.7.7</code>).
+      (2) <strong>Concurrent Multi-Display Virtual Screen Isolation, Windowing Customizations &amp; LaForge Central Console</strong> (<code class="inline-code">v0.7.0–v0.7.8</code>).
       Assigning integer phase numbers to those two sidequests bumped the original Phase 6 &amp; 7 to "Phase 8, 9, 10" in <code class="inline-code">completion_plan.md</code>, while the conversation summary still referenced "Phase 5".
       The table below establishes the <strong>canonical 7-Phase Master Roadmap</strong>.
     </div>
@@ -367,16 +367,16 @@
         <tr id="lmt-phase-5">
           <td><code class="elem-id">lmt-phase-5</code></td>
           <td><strong>Phase 5</strong><br/><small>(Injected Sidequest)</small></td>
-          <td><code class="inline-code">v0.7.0</code> &rarr; <code class="inline-code">v0.7.7</code></td>
-          <td><strong>Concurrent Multi-Display Isolation, LaForge Central Console, Splash UX &amp; Cross-App Breakout:</strong> Per-app virtual displays (<code class="inline-code">--new-display</code>), <code class="inline-code">LaForgeConsole.exe</code> tray service, <code class="inline-code">.conf</code> policies, <code class="inline-code">0ms</code> <code class="inline-code">SW_HIDE</code> background/restore, auto QEMU shutdown, enlarged <code class="inline-code">640x160</code> splash overlay, and window-preserving cross-app virtual display breakout.</td>
-          <td><span id="lmt-status-phase-5" class="status-badge status-green" data-tooltip="Multi-display rendering, audio/media handoff, notification center, splash overlay, and cross-app breakout validated by user; v0.7.7 widens splash to 640x160 and pins caller window size/position.">● Validated</span></td>
+          <td><code class="inline-code">v0.7.0</code> &rarr; <code class="inline-code">v0.7.8</code></td>
+          <td><strong>Concurrent Multi-Display Isolation, LaForge Central Console, Splash UX, Cross-App Breakout &amp; Windowing Customizations:</strong> Per-app virtual displays (<code class="inline-code">--new-display</code>), <code class="inline-code">LaForgeConsole.exe</code> tray service, <code class="inline-code">.conf</code> policies, <code class="inline-code">0ms</code> <code class="inline-code">SW_HIDE</code> background/restore, auto QEMU shutdown, <code class="inline-code">640x160</code> splash overlay, cross-app breakout, manifest orientation/size polling (<code class="inline-code">540x960</code> portrait vs <code class="inline-code">1280x720</code> landscape), freetext <code class="inline-code">WxH*</code> override, and live aspect-ratio resizing for window-able apps.</td>
+          <td><span id="lmt-status-phase-5" class="status-badge status-yellow" data-tooltip="Core multi-display, Console, splash overlay, auto-teardown, and cross-app breakout validated by user; v0.7.8 adds manifest orientation sizing (540x960 for Camera), Gear modal WxH* overrides, and live aspect-ratio resizing for window-able apps.">◐ Pending Validation</span></td>
         </tr>
         <tr id="lmt-phase-6">
           <td><code class="elem-id">lmt-phase-6</code></td>
-          <td><strong>Phase 6</strong><br/><small>(Current Phase)</small></td>
-          <td><code class="inline-code">v0.7.7</code> / <code class="inline-code">v0.8.0</code></td>
-          <td><strong>Host Mic &amp; Webcam Passthrough + Live <code class="inline-code">ACTION_VIEW</code> File Relays / Registry Associations:</strong> Host mic validated in Voice Recorder; host physical webcam (<code class="inline-code">webcam4</code> Integrated Webcam + <code class="inline-code">emulated</code> back camera) wired in <code class="inline-code">v0.7.7</code>; remaining work is Virtual Display <code class="inline-code">ACTION_VIEW</code> file relay routing and <code class="inline-code">--register</code>/<code class="inline-code">--unregister</code> Windows file associations.</td>
-          <td><span id="lmt-status-phase-6" class="status-badge status-blue" data-tooltip="Host microphone validated by user; dual-camera (webcam4 front + emulated back) wired and verified in CameraService in v0.7.7; Windows Registry file associations (--register/--unregister) next.">◈ In Progress</span></td>
+          <td><strong>Phase 6</strong><br/><small>(Next Phase)</small></td>
+          <td><code class="inline-code">v0.7.8</code> / <code class="inline-code">v0.8.0</code></td>
+          <td><strong>Host Mic &amp; Webcam Passthrough + Live <code class="inline-code">ACTION_VIEW</code> File Relays / Registry Associations:</strong> Host mic validated in Voice Recorder and host physical webcam (<code class="inline-code">webcam4</code> Integrated Webcam + <code class="inline-code">emulated</code> back camera) validated in Fossify Camera; remaining work is Virtual Display <code class="inline-code">ACTION_VIEW</code> file relay routing and <code class="inline-code">--register</code>/<code class="inline-code">--unregister</code> Windows file associations.</td>
+          <td><span id="lmt-status-phase-6" class="status-badge status-blue" data-tooltip="Host microphone and host webcam both validated by user; Windows Registry file associations (--register/--unregister) and Virtual Display ACTION_VIEW relay next.">◈ In Progress</span></td>
         </tr>
         <tr id="lmt-phase-7">
           <td><code class="elem-id">lmt-phase-7</code></td>
@@ -415,13 +415,13 @@
           <td><code class="elem-id">lmt-runtime-snapshot-clean</code></td>
           <td><strong>Immutable <code class="inline-code">default_boot</code> Snapshot Hygiene</strong></td>
           <td>Cold-booted pristine <code class="inline-code">default_boot</code> snapshot with <code class="inline-code">0</code> leaked displays, dual cameras (<code class="inline-code">emulated</code> back + <code class="inline-code">webcam4</code> front), rotation lock, and pre-granted runtime permissions. Runtime sessions pass <code class="inline-code">-no-snapshot-save</code>.</td>
-          <td><span id="lmt-status-runtime-snapshot-clean" class="status-badge status-green" data-tooltip="Validated in v0.7.4–v0.7.7. Snapshot loads in ~2–3 seconds without accumulated uptime bloat.">● Validated</span></td>
+          <td><span id="lmt-status-runtime-snapshot-clean" class="status-badge status-green" data-tooltip="Validated in v0.7.4–v0.7.8. Snapshot loads in ~2–3 seconds without accumulated uptime bloat.">● Validated</span></td>
         </tr>
         <tr id="lmt-runtime-auto-teardown">
           <td><code class="elem-id">lmt-runtime-auto-teardown</code></td>
           <td><strong>Automatic Headless QEMU Teardown on Exit</strong></td>
           <td><code class="inline-code">Program.StopEmulatorIfNoActiveSessions</code> and <code class="inline-code">LaForgeConsoleWindow.FormClosing</code> track <code class="inline-code">Local\LaForge_ConsoleServiceActiveEvent</code> and active <code class="inline-code">scrcpy</code> processes, terminating <code class="inline-code">qemu-system-x86_64-headless.exe</code> when all apps and Console close.</td>
-          <td><span id="lmt-status-runtime-auto-teardown" class="status-badge status-green" data-tooltip="Implemented and verified in automated teardown tests (0 remaining qemu processes).">● Validated</span></td>
+          <td><span id="lmt-status-runtime-auto-teardown" class="status-badge status-green" data-tooltip="Validated by user in Step 588.">● Validated</span></td>
         </tr>
         <tr id="lmt-runtime-sensor-cpu">
           <td><code class="elem-id">lmt-runtime-sensor-cpu</code></td>
@@ -433,13 +433,13 @@
           <td><code class="elem-id">lmt-runtime-host-mic</code></td>
           <td><strong>Host Microphone Audio Input Forwarding</strong></td>
           <td>Updated <code class="inline-code">Program.BuildEmulatorArgs(forExecution: true)</code> to pass <code class="inline-code">-allow-host-audio</code> (required by QEMU to stop zeroing out mic input), paired with <code class="inline-code">adb emu avd hostmicon</code> and pre-granted <code class="inline-code">RECORD_AUDIO</code>.</td>
-          <td><span id="lmt-status-runtime-host-mic" class="status-badge status-green" data-tooltip="Validated by user in Step 582 ('Mic works perfectly in Voicerecorder now').">● Validated</span></td>
+          <td><span id="lmt-status-runtime-host-mic" class="status-badge status-green" data-tooltip="Validated by user in Steps 582 &amp; 588 ('Mic works perfectly in Voicerecorder now').">● Validated</span></td>
         </tr>
         <tr id="lmt-runtime-host-webcam">
           <td><code class="elem-id">lmt-runtime-host-webcam</code></td>
           <td><strong>Host Webcam (<code class="inline-code">webcam4</code>) &amp; Dual-Camera HAL Provisioning</strong></td>
           <td>Configured <code class="inline-code">hw.camera.front = webcam4</code> (host Integrated Webcam) and <code class="inline-code">hw.camera.back = emulated</code> in <code class="inline-code">config.ini</code> and <code class="inline-code">default_boot</code> snapshot so Android <code class="inline-code">CameraService</code> exposes both Front (ID 10) and Back (ID 1) cameras required by CameraX <code class="inline-code">CameraValidator</code>.</td>
-          <td><span id="lmt-status-runtime-host-webcam" class="status-badge status-yellow" data-tooltip="Verified via logcat in v0.7.7 (Camera 10 Opened, CameraState=OPEN, error=null); awaiting user test in Fossify Camera.">◐ Pending Validation</span></td>
+          <td><span id="lmt-status-runtime-host-webcam" class="status-badge status-green" data-tooltip="Validated by user in Step 588 ('Camera works!').">● Validated</span></td>
         </tr>
       </tbody>
     </table>
@@ -449,7 +449,7 @@
   <section class="lmt-section" id="lmt-sec-display">
     <div class="section-header">
       <h2>3. Display Bridge, Virtual Screen Isolation &amp; Native Window UX</h2>
-      <span class="section-sub">scrcpy v5.0.1 Direct3D rendering, per-app virtual displays, splash overlays, and cross-app intent breakout</span>
+      <span class="section-sub">scrcpy v5.0.1 Direct3D rendering, per-app virtual displays, splash overlays, cross-app breakout, and windowing customizations</span>
     </div>
     <table class="lmt-table">
       <thead>
@@ -470,7 +470,7 @@
         <tr id="lmt-display-virtual-screens">
           <td><code class="elem-id">lmt-display-virtual-screens</code></td>
           <td><strong>Concurrent Per-App Virtual Displays (<code class="inline-code">--new-display</code>)</strong></td>
-          <td>Allocates an independent <code class="inline-code">1280x720/160</code> virtual display per app serialized via <code class="inline-code">Local\LaForge_VirtualDisplayAllocMutex</code> and routes tasks via <code class="inline-code">BindAppToVirtualDisplay</code>.</td>
+          <td>Allocates an independent virtual display per app serialized via <code class="inline-code">Local\LaForge_VirtualDisplayAllocMutex</code> and routes tasks via <code class="inline-code">BindAppToVirtualDisplay</code>.</td>
           <td><span id="lmt-status-display-virtual-screens" class="status-badge status-green" data-tooltip="Validated concurrent execution (e.g., Cromite + Fossify Music Player side-by-side) without apps hiding or pausing each other.">● Validated</span></td>
         </tr>
         <tr id="lmt-display-kiosk-lockdown">
@@ -489,13 +489,25 @@
           <td><code class="elem-id">lmt-display-splash-overlay</code></td>
           <td><strong>Streamlined Bootstrap &amp; Enlarged Verbose Splash Overlay (<code class="inline-code">640x160</code>)</strong></td>
           <td><code class="inline-code">LaForgeSplashOverlay.cs</code> enlarged from <code class="inline-code">460x132</code> to <code class="inline-code">640x160</code> (<code class="inline-code">508px</code> label width) in <code class="inline-code">v0.7.7</code> so verbose status strings (<code class="inline-code">"Preparing Fossify Filemanager for initial launch..."</code>) never clip with ellipses.</td>
-          <td><span id="lmt-status-display-splash-overlay" class="status-badge status-yellow" data-tooltip="Splash presence validated by user in Step 582; enlarged to 640x160 in v0.7.7 so verbose text fits without truncation.">◐ Pending Validation</span></td>
+          <td><span id="lmt-status-display-splash-overlay" class="status-badge status-green" data-tooltip="Validated by user in Step 588.">● Validated</span></td>
         </tr>
         <tr id="lmt-display-cross-app-breakout">
           <td><code class="elem-id">lmt-display-cross-app-breakout</code></td>
           <td><strong>Cross-App Intent Breakout with Caller Window Bounds Preservation</strong></td>
           <td><code class="inline-code">BindAppToVirtualDisplay</code> locks per-display orientation (<code class="inline-code">wm set-ignore-orientation-request -d &lt;id&gt; true</code>) so portrait child intents never rotate the caller's virtual display, and <code class="inline-code">CheckCrossAppBreakoutAsync</code> (<code class="inline-code">750ms</code> poll) pins the caller's Win32 <code class="inline-code">RECT</code> (<code class="inline-code">SetWindowPos</code>).</td>
-          <td><span id="lmt-status-display-cross-app-breakout" class="status-badge status-yellow" data-tooltip="Cross-app breakout validated by user in Step 582; v0.7.7 locks virtual display orientation and pins caller Win32 window bounds so the originating window does not resize/reposition.">◐ Pending Validation</span></td>
+          <td><span id="lmt-status-display-cross-app-breakout" class="status-badge status-green" data-tooltip="Validated by user in Step 588 ('That fix did work as intended and the handoff is pretty smooth now').">● Validated</span></td>
+        </tr>
+        <tr id="lmt-display-window-sizing-config">
+          <td><code class="elem-id">lmt-display-window-sizing-config</code></td>
+          <td><strong>Manifest Orientation Polling &amp; Per-App Screen Size Override (<code class="inline-code">WxH*</code>)</strong></td>
+          <td><code class="inline-code">ApkManifestParser.cs</code> polls binary <code class="inline-code">AndroidManifest.xml</code> for <code class="inline-code">screenOrientation</code> (<code class="inline-code">portrait</code> &rarr; <code class="inline-code">540x960</code> default for <code class="inline-code">Fossify Camera</code>; <code class="inline-code">landscape</code>/<code class="inline-code">unspecified</code> &rarr; <code class="inline-code">1280x720</code>), <code class="inline-code">resizeableActivity</code> (<code class="inline-code">IsWindowable</code>), and supported sizes. Exposed in <code class="inline-code">.conf</code> (<code class="inline-code">screen_size_override</code>) and Console <code class="inline-code">⚙</code> Gear modal with preset selector + freetext <code class="inline-code">WxH*</code> override and compatibility risk warning.</td>
+          <td><span id="lmt-status-display-window-sizing-config" class="status-badge status-yellow" data-tooltip="Implemented in v0.7.8; Fossify Camera now defaults to 540x960 portrait virtual display and Console Gear modal exposes preset + freetext WxH* override.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-display-live-aspect-resize">
+          <td><code class="elem-id">lmt-display-live-aspect-resize</code></td>
+          <td><strong>Live Multi-Aspect Window Resizing for Window-able Apps</strong></td>
+          <td>For apps declaring <code class="inline-code">resizeableActivity="true"</code> (<code class="inline-code">IsWindowable = true</code>) with <code class="inline-code">dynamic_aspect_resize=true</code>, dragging the window border to a new aspect ratio dynamically updates the Android virtual display (<code class="inline-code">adb shell wm size WxH -d &lt;displayId&gt;</code>) upon mouse release while preserving the user's dragged window position.</td>
+          <td><span id="lmt-status-display-live-aspect-resize" class="status-badge status-yellow" data-tooltip="Implemented in v0.7.8 in LaForgeWindow.CheckCrossAppBreakoutAsync using GetClientRect + GetAsyncKeyState(VK_LBUTTON) + wm size -d.">◐ Pending Validation</span></td>
         </tr>
       </tbody>
     </table>
@@ -520,7 +532,7 @@
         <tr id="lmt-packager-axml-parser">
           <td><code class="elem-id">lmt-packager-axml-parser</code></td>
           <td><strong>Binary <code class="inline-code">AndroidManifest.xml</code> (AXML) Parser</strong></td>
-          <td><code class="inline-code">ApkManifestParser.cs</code> parses UTF-8/UTF-16 string pools, resource IDs, package names, version codes, launcher activities, and <code class="inline-code">ACTION_VIEW</code> MIME types directly from ZIP/APK bytes.</td>
+          <td><code class="inline-code">ApkManifestParser.cs</code> parses UTF-8/UTF-16 string pools, resource IDs, package names, version codes, launcher activities, <code class="inline-code">screenOrientation</code>, <code class="inline-code">resizeableActivity</code>, and <code class="inline-code">ACTION_VIEW</code> MIME types directly from ZIP/APK bytes.</td>
           <td><span id="lmt-status-packager-axml-parser" class="status-badge status-green" data-tooltip="Validated across all 6 sample APKs (including 222 MB Cromite x86_64 APK).">● Validated</span></td>
         </tr>
         <tr id="lmt-packager-trampoline-bypass">
@@ -570,14 +582,14 @@
         <tr id="lmt-bridge-conf-store">
           <td><code class="elem-id">lmt-bridge-conf-store</code></td>
           <td><strong>Per-App <code class="inline-code">.conf</code> Policy Store (<code class="inline-code">%LOCALAPPDATA%\LaForge\config</code>)</strong></td>
-          <td>Stores human-readable <code class="inline-code">&lt;package&gt;.conf</code> files beside <code class="inline-code">HOST/</code> controlling <code class="inline-code">virtual_display</code>, <code class="inline-code">background_on_close</code>, <code class="inline-code">block_network</code>, <code class="inline-code">mute_audio</code>, <code class="inline-code">mute_mic</code>, <code class="inline-code">block_hid</code>, and <code class="inline-code">host_share_enabled</code>.</td>
+          <td>Stores human-readable <code class="inline-code">&lt;package&gt;.conf</code> files beside <code class="inline-code">HOST/</code> controlling <code class="inline-code">virtual_display</code>, <code class="inline-code">background_on_close</code>, <code class="inline-code">block_network</code>, <code class="inline-code">mute_audio</code>, <code class="inline-code">mute_mic</code>, <code class="inline-code">block_hid</code>, <code class="inline-code">host_share_enabled</code>, <code class="inline-code">screen_size_override</code>, and <code class="inline-code">dynamic_aspect_resize</code>.</td>
           <td><span id="lmt-status-bridge-conf-store" class="status-badge status-green" data-tooltip="Validated; persists per-app settings across launches and Console Gear modal edits.">● Validated</span></td>
         </tr>
         <tr id="lmt-bridge-safe-storage-appop">
           <td><code class="elem-id">lmt-bridge-safe-storage-appop</code></td>
           <td><strong>Non-Destructive <code class="inline-code">MANAGE_EXTERNAL_STORAGE</code> &amp; Pre-Launch Policy Ordering</strong></td>
           <td>Fixed in <code class="inline-code">v0.7.6</code>: <code class="inline-code">EnforcePoliciesOnGuest</code> runs <em>before</em> <code class="inline-code">BindAppToVirtualDisplay</code> and never touches <code class="inline-code">MANAGE_EXTERNAL_STORAGE</code> on an already-running app unless toggled, preventing Android <code class="inline-code">ActivityManager</code> from killing the app 1.5s after launch.</td>
-          <td><span id="lmt-status-bridge-safe-storage-appop" class="status-badge status-green" data-tooltip="Validated by user across Music Player, Voice Recorder, and Cromite; 1.5s post-launch kill is completely eliminated.">● Validated</span></td>
+          <td><span id="lmt-status-bridge-safe-storage-appop" class="status-badge status-green" data-tooltip="Validated by user in Step 588.">● Validated</span></td>
         </tr>
         <tr id="lmt-bridge-file-relay-cli">
           <td><code class="elem-id">lmt-bridge-file-relay-cli</code></td>
@@ -614,14 +626,14 @@
         <tr id="lmt-console-tray-dashboard">
           <td><code class="elem-id">lmt-console-tray-dashboard</code></td>
           <td><strong>Central Management GUI &amp; System Tray Service</strong></td>
-          <td><code class="inline-code">LaForgeConsoleWindow.cs</code> displays remembered apps with icons, live status badges, audio/mic indicators, notification counters, and a <code class="inline-code">⚙</code> policy modal.</td>
+          <td><code class="inline-code">LaForgeConsoleWindow.cs</code> displays remembered apps with icons, live status badges, audio/mic indicators, notification counters, and a <code class="inline-code">⚙</code> policy &amp; windowing modal.</td>
           <td><span id="lmt-status-console-tray-dashboard" class="status-badge status-green" data-tooltip="Validated by user across multiple test sessions including live audio/media handoff.">● Validated</span></td>
         </tr>
         <tr id="lmt-console-accurate-bg-state">
           <td><code class="elem-id">lmt-console-accurate-bg-state</code></td>
           <td><strong>Accurate <code class="inline-code">STOPPED</code> vs. <code class="inline-code">BACKGROUND</code> Telemetry &amp; Clean Window Close</strong></td>
           <td>Fixed in <code class="inline-code">v0.7.6</code>: <code class="inline-code">QueryLiveTelemetry</code> ignores dead <code class="inline-code">Recent tasks:</code> entries and cached Linux PIDs (<code class="inline-code">pidof</code> without an active Android task or audio stream), and closing a window when <code class="inline-code">background_on_close=false</code> runs <code class="inline-code">am force-stop</code>.</td>
-          <td><span id="lmt-status-console-accurate-bg-state" class="status-badge status-green" data-tooltip="Validated in v0.7.6/v0.7.7.">● Validated</span></td>
+          <td><span id="lmt-status-console-accurate-bg-state" class="status-badge status-green" data-tooltip="Validated by user in Step 588.">● Validated</span></td>
         </tr>
         <tr id="lmt-console-path-resolution">
           <td><code class="elem-id">lmt-console-path-resolution</code></td>
@@ -667,7 +679,7 @@
           <td><code class="elem-id">lmt-bundle-gallery</code></td>
           <td><strong>Fossify Gallery</strong><br/><small><code class="inline-code">FossifyGallery.exe</code></small></td>
           <td><code class="inline-code">org.fossify.gallery</code><br/><small><code class="inline-code">.activities.MainActivity</code></small></td>
-          <td>Validated smooth rendering and interaction; Camera button intent breaks <code class="inline-code">Fossify Camera</code> out into its own virtual display window while locking Gallery's window size &amp; position (<code class="inline-code">v0.7.7</code>).</td>
+          <td>Validated smooth rendering and interaction; Camera button intent breaks <code class="inline-code">Fossify Camera</code> out into its own virtual display window while locking Gallery's window size &amp; position.</td>
           <td><span id="lmt-status-bundle-gallery" class="status-badge status-green" data-tooltip="Validated by user including cross-app Camera intent breakout.">● Validated</span></td>
         </tr>
         <tr id="lmt-bundle-musicplayer">
@@ -675,28 +687,28 @@
           <td><strong>Fossify Music Player</strong><br/><small><code class="inline-code">FossifyMusicplayer.exe</code></small></td>
           <td><code class="inline-code">org.fossify.musicplayer</code><br/><small><code class="inline-code">.activities.MainActivity</code></small></td>
           <td>Validated audio playback, media notification display, and seamless audio/media control handoff with Cromite browser.</td>
-          <td><span id="lmt-status-bundle-musicplayer" class="status-badge status-green" data-tooltip="Validated by user in Step 582 (audio and media control handoff tested and confirmed working perfectly).">● Validated</span></td>
+          <td><span id="lmt-status-bundle-musicplayer" class="status-badge status-green" data-tooltip="Validated by user in Steps 582 &amp; 588 (audio and media control handoff tested and confirmed working perfectly).">● Validated</span></td>
         </tr>
         <tr id="lmt-bundle-voicerecorder">
           <td><code class="elem-id">lmt-bundle-voicerecorder</code></td>
           <td><strong>Fossify Voice Recorder</strong><br/><small><code class="inline-code">FossifyVoicerecorder.exe</code></small></td>
           <td><code class="inline-code">org.fossify.voicerecorder</code><br/><small><code class="inline-code">.activities.MainActivity</code></small></td>
           <td>Validated live microphone recording from Windows host microphone (<code class="inline-code">-allow-host-audio</code> + <code class="inline-code">hostmicon</code>).</td>
-          <td><span id="lmt-status-bundle-voicerecorder" class="status-badge status-green" data-tooltip="Validated by user in Step 582 ('Mic works perfectly in Voicerecorder now').">● Validated</span></td>
+          <td><span id="lmt-status-bundle-voicerecorder" class="status-badge status-green" data-tooltip="Validated by user in Steps 582 &amp; 588 ('Mic works perfectly in Voicerecorder now').">● Validated</span></td>
         </tr>
         <tr id="lmt-bundle-camera">
           <td><code class="elem-id">lmt-bundle-camera</code></td>
           <td><strong>Fossify Camera</strong><br/><small><code class="inline-code">FossifyCamera.exe</code></small></td>
           <td><code class="inline-code">org.fossify.camera</code><br/><small><code class="inline-code">.activities.MainActivity</code></small></td>
-          <td>Fixed <code class="inline-code">"Accessing camera failed"</code> in <code class="inline-code">v0.7.7</code> by enabling <code class="inline-code">hw.camera.front = webcam4</code> (Integrated Webcam) alongside <code class="inline-code">hw.camera.back = emulated</code> in <code class="inline-code">default_boot</code> so CameraX <code class="inline-code">CameraValidator</code> passes on both Front and Back cameras.</td>
-          <td><span id="lmt-status-bundle-camera" class="status-badge status-yellow" data-tooltip="CameraX CameraValidator failure fixed in v0.7.7 (both Camera 10 Front webcam4 and Camera 1 Back emulated open with error=null in logcat); awaiting user test.">◐ Pending Validation</span></td>
+          <td>Validated live webcam streaming (<code class="inline-code">hw.camera.front = webcam4</code> + <code class="inline-code">hw.camera.back = emulated</code>); <code class="inline-code">v0.7.8</code> updates default window &amp; virtual display dimensions to <code class="inline-code">540x960</code> (portrait) per manifest declaration.</td>
+          <td><span id="lmt-status-bundle-camera" class="status-badge status-green" data-tooltip="Validated by user in Step 588 ('Camera works!'); v0.7.8 sets native 540x960 portrait virtual display dimensions.">● Validated</span></td>
         </tr>
         <tr id="lmt-bundle-cromite">
           <td><code class="elem-id">lmt-bundle-cromite</code></td>
           <td><strong>Cromite Browser (x86_64)</strong><br/><small><code class="inline-code">Cromite.exe</code></small></td>
           <td><code class="inline-code">org.cromite.cromite</code><br/><small><code class="inline-code">org.chromium.chrome.browser.ChromeTabbedActivity</code></small></td>
           <td>Validated network passthrough, web audio streaming, and concurrent audio/media control handoff alongside Fossify Music Player.</td>
-          <td><span id="lmt-status-bundle-cromite" class="status-badge status-green" data-tooltip="Validated by user in Step 582 (side-by-side web audio and Music Player handoff).">● Validated</span></td>
+          <td><span id="lmt-status-bundle-cromite" class="status-badge status-green" data-tooltip="Validated by user in Steps 582 &amp; 588 (side-by-side web audio and Music Player handoff).">● Validated</span></td>
         </tr>
         <tr id="lmt-bundle-citrix">
           <td><code class="elem-id">lmt-bundle-citrix</code></td>
@@ -732,7 +744,7 @@
             <strong>Root Cause (Proven via <code class="inline-code">adb logcat</code>):</strong> <code class="inline-code">LaForgeWindow.cs</code> ran <code class="inline-code">EnforcePoliciesOnGuest</code> asynchronously in <code class="inline-code">Task.Run</code> <em>after</em> launching the app. When <code class="inline-code">cmd appops set &lt;pkg&gt; MANAGE_EXTERNAL_STORAGE allow</code> executed ~1.5s after launch, Android's <code class="inline-code">ActivityManager</code> logged <code class="inline-code">Killing &lt;pid&gt;:&lt;pkg&gt;: MANAGE_EXTERNAL_STORAGE changed</code> and destroyed the <code class="inline-code">ActivityRecord</code>.<br/>
             <strong>Fix (<code class="inline-code">v0.7.6</code>):</strong> Pre-granted all runtime permissions + <code class="inline-code">MANAGE_EXTERNAL_STORAGE allow</code> in <code class="inline-code">default_boot</code>, moved <code class="inline-code">EnforcePoliciesOnGuest</code> <em>before</em> activity launch, and stopped touching <code class="inline-code">MANAGE_EXTERNAL_STORAGE</code> on running processes.
           </td>
-          <td><span id="lmt-status-bug-15s-black-screen" class="status-badge status-green" data-tooltip="Validated by user in Step 582 across Cromite, Music Player, and Voice Recorder.">● Validated</span></td>
+          <td><span id="lmt-status-bug-15s-black-screen" class="status-badge status-green" data-tooltip="Validated by user in Steps 582 &amp; 588.">● Validated</span></td>
         </tr>
         <tr id="lmt-bug-phantom-bg-on-close">
           <td><code class="elem-id">lmt-bug-phantom-bg-on-close</code></td>
@@ -741,7 +753,7 @@
             <strong>Root Cause:</strong> (1) <code class="inline-code">QueryLiveTelemetry</code> treated any cached Linux process (<code class="inline-code">pidof &gt; 0</code>) as <code class="inline-code">IsBackgrounded</code> and scanned into <code class="inline-code">Recent tasks:</code> in <code class="inline-code">dumpsys activity activities</code>. (2) Closing a window when <code class="inline-code">background_on_close=false</code> didn't run <code class="inline-code">am force-stop</code>.<br/>
             <strong>Fix (<code class="inline-code">v0.7.6</code>):</strong> <code class="inline-code">IsBackgrounded</code> now requires an active non-finishing <code class="inline-code">ActivityRecord</code> or active audio stream, and closing a window with <code class="inline-code">background_on_close=false</code> runs <code class="inline-code">am force-stop</code>.
           </td>
-          <td><span id="lmt-status-bug-phantom-bg-on-close" class="status-badge status-green" data-tooltip="Fixed and validated in v0.7.6.">● Validated</span></td>
+          <td><span id="lmt-status-bug-phantom-bg-on-close" class="status-badge status-green" data-tooltip="Validated by user in Step 588.">● Validated</span></td>
         </tr>
         <tr id="lmt-bug-mic-silence">
           <td><code class="elem-id">lmt-bug-mic-silence</code></td>
@@ -750,7 +762,7 @@
             <strong>Root Cause:</strong> <code class="inline-code">Program.BuildEmulatorArgs</code> passed <code class="inline-code">-no-audio</code> and omitted <code class="inline-code">-allow-host-audio</code> (which QEMU's help documents as: <em>"Allows sending of audio from audio input devices. Otherwise, zeroes out audio."</em>).<br/>
             <strong>Fix (<code class="inline-code">v0.7.6</code>):</strong> Live emulator launches now pass <code class="inline-code">-allow-host-audio</code> with <code class="inline-code">adb emu avd hostmicon</code> and pre-granted <code class="inline-code">RECORD_AUDIO</code>.
           </td>
-          <td><span id="lmt-status-bug-mic-silence" class="status-badge status-green" data-tooltip="Validated by user in Step 582 ('Mic works perfectly in Voicerecorder now').">● Validated</span></td>
+          <td><span id="lmt-status-bug-mic-silence" class="status-badge status-green" data-tooltip="Validated by user in Steps 582 &amp; 588 ('Mic works perfectly in Voicerecorder now').">● Validated</span></td>
         </tr>
         <tr id="lmt-bug-gallery-camera-same-window">
           <td><code class="elem-id">lmt-bug-gallery-camera-same-window</code></td>
@@ -759,7 +771,7 @@
             <strong>Root Cause:</strong> Android launches chooser intents on the caller's virtual display (<code class="inline-code">Display #2</code>), and <code class="inline-code">Fossify Camera</code> requests <code class="inline-code">screenOrientation="portrait"</code>, causing Android to rotate <code class="inline-code">Display #2</code> (<code class="inline-code">1280x720 &rarr; 720x1280</code>) and <code class="inline-code">scrcpy</code> to resize the caller window before breakout.<br/>
             <strong>Fix (<code class="inline-code">v0.7.6</code> &rarr; <code class="inline-code">v0.7.7</code>):</strong> <code class="inline-code">BindAppToVirtualDisplay</code> now locks per-display rotation (<code class="inline-code">wm set-ignore-orientation-request -d &lt;id&gt; true</code>), <code class="inline-code">CheckCrossAppBreakoutAsync</code> polls every <code class="inline-code">750ms</code>, and <code class="inline-code">TryRestoreWindowBoundsByPid</code> pins the caller window's exact Win32 <code class="inline-code">RECT</code>.
           </td>
-          <td><span id="lmt-status-bug-gallery-camera-same-window" class="status-badge status-yellow" data-tooltip="Cross-app breakout confirmed working by user; v0.7.7 adds per-display rotation lock and Win32 RECT pinning to eliminate caller window resize.">◐ Pending Validation</span></td>
+          <td><span id="lmt-status-bug-gallery-camera-same-window" class="status-badge status-green" data-tooltip="Validated by user in Step 588 ('That fix did work as intended and the handoff is pretty smooth now').">● Validated</span></td>
         </tr>
         <tr id="lmt-bug-camera-validator">
           <td><code class="elem-id">lmt-bug-camera-validator</code></td>
@@ -768,7 +780,16 @@
             <strong>Root Cause (Proven via <code class="inline-code">adb logcat</code>):</strong> AVD <code class="inline-code">config.ini</code> had <code class="inline-code">hw.camera.front = none</code> while Android's system image declares <code class="inline-code">android.hardware.camera.front</code>. When <code class="inline-code">Fossify Camera</code> initialized AndroidX CameraX, <code class="inline-code">CameraValidator</code> threw <code class="inline-code">CameraIdListIncorrectException: Expected camera missing from device (LensFilter:0)</code>, aborting initialization for <em>both</em> cameras.<br/>
             <strong>Fix (<code class="inline-code">v0.7.7</code>):</strong> Enabled <code class="inline-code">hw.camera.front = webcam4</code> (host Integrated Webcam) alongside <code class="inline-code">hw.camera.back = emulated</code> and cold-booted + saved <code class="inline-code">default_boot</code> snapshot so <code class="inline-code">CameraService</code> exposes 2 cameras (Front ID 10 + Back ID 1).
           </td>
-          <td><span id="lmt-status-bug-camera-validator" class="status-badge status-yellow" data-tooltip="Fixed in v0.7.7 and verified in logcat (Camera 10 Opened, CameraState=OPEN, error=null); awaiting user test.">◐ Pending Validation</span></td>
+          <td><span id="lmt-status-bug-camera-validator" class="status-badge status-green" data-tooltip="Validated by user in Step 588 ('Camera works!').">● Validated</span></td>
+        </tr>
+        <tr id="lmt-bug-camera-pillarbox-window">
+          <td><code class="elem-id">lmt-bug-camera-pillarbox-window</code></td>
+          <td><strong>Fossify Camera spawns in a <code class="inline-code">1280x720</code> landscape window with black pillarbox bars &amp; sideways preview</strong></td>
+          <td>
+            <strong>Root Cause:</strong> <code class="inline-code">Fossify Camera</code> declares <code class="inline-code">android:screenOrientation="portrait"</code> in <code class="inline-code">AndroidManifest.xml</code>, but its <code class="inline-code">config.json</code> was hardcoded to <code class="inline-code">1280x720</code> (landscape). When <code class="inline-code">wm set-ignore-orientation-request true</code> locked the <code class="inline-code">1280x720</code> virtual display to <code class="inline-code">ROTATION_0</code> (landscape), Android 14 pillarboxed the portrait activity inside <code class="inline-code">1280x720</code> and CameraX received a <code class="inline-code">ROTATION_0</code> landscape display angle.<br/>
+            <strong>Fix (<code class="inline-code">v0.7.8</code>):</strong> <code class="inline-code">ApkManifestParser</code> now extracts <code class="inline-code">PreferredOrientation="portrait"</code> and sets <code class="inline-code">PreferredScreenSize="540x960"</code> so <code class="inline-code">Fossify Camera</code> launches on a native <code class="inline-code">540x960</code> portrait virtual display (<code class="inline-code">--new-display=540x960/160</code>) with zero black bars and upright CameraX orientation.
+          </td>
+          <td><span id="lmt-status-bug-camera-pillarbox-window" class="status-badge status-yellow" data-tooltip="Fixed in v0.7.8; Fossify Camera now launches on a native 540x960 portrait virtual display.">◐ Pending Validation</span></td>
         </tr>
         <tr id="lmt-bug-dist-adb-path">
           <td><code class="elem-id">lmt-bug-dist-adb-path</code></td>

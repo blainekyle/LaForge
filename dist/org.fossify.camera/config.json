@@ -23,8 +23,8 @@
     "window": {
       "x": 140,
       "y": 140,
-      "width": 1280,
-      "height": 720,
+      "width": 540,
+      "height": 960,
       "borderless": false,
       "always_on_top": false,
       "fullscreen": false

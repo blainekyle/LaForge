@@ -13,11 +13,15 @@ public sealed class ApkMetadata
     public List<string> AllActivities { get; set; } = new();
     public List<string> MimeTypes { get; set; } = new();
     public List<string> Schemes { get; set; } = new();
+    public string PreferredOrientation { get; set; } = "unspecified"; // "portrait", "landscape", or "unspecified"
+    public bool IsWindowable { get; set; } = true; // true if resizeableActivity=true / supports arbitrary multi-window aspect ratios
+    public string PreferredScreenSize { get; set; } = "1280x720";
+    public List<string> SupportedScreenSizes { get; set; } = new();
 }
 
 /// <summary>
 /// Zero-dependency Android Binary XML (AXML) parser that extracts package,
-/// main launcher activity, and intent-filter MIME types directly from an APK archive.
+/// main launcher activity, windowing/orientation capabilities, and intent-filter MIME types directly from an APK archive.
 /// </summary>
 public static class ApkManifestParser
 {
@@ -69,6 +73,11 @@ public static class ApkManifestParser
         var filterSchemes = new List<string>();
         string? firstViewActivity = null;
 
+        bool? appResizable = null;
+        var activityOrientations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var activityResizable = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        var activityLayoutSize = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         while (offset + 8 <= fileSize)
         {
             ushort chunkType = BitConverter.ToUInt16(bytes, offset);
@@ -109,6 +118,14 @@ public static class ApkManifestParser
                         meta.VersionCode = vc;
                     }
                 }
+                else if (elemName == "application")
+                {
+                    if (attrs.TryGetValue("resizeableActivity", out string? appRes) &&
+                        bool.TryParse(appRes, out bool ar))
+                    {
+                        appResizable = ar;
+                    }
+                }
                 else if (elemName == "activity" || elemName == "activity-alias")
                 {
                     bool isEnabled = !attrs.TryGetValue("enabled", out string? enVal) ||
@@ -121,10 +138,30 @@ public static class ApkManifestParser
                         {
                             meta.AllActivities.Add(currentActivity);
                         }
+
+                        if (attrs.TryGetValue("screenOrientation", out string? rawOrien))
+                        {
+                            activityOrientations[currentActivity] = DecodeScreenOrientation(rawOrien);
+                        }
+                        if (attrs.TryGetValue("resizeableActivity", out string? actRes) &&
+                            bool.TryParse(actRes, out bool acr))
+                        {
+                            activityResizable[currentActivity] = acr;
+                        }
                     }
                     else
                     {
                         currentActivity = null;
+                    }
+                }
+                else if (elemName == "layout" && currentActivity != null)
+                {
+                    if (attrs.TryGetValue("defaultWidth", out string? dw) &&
+                        attrs.TryGetValue("defaultHeight", out string? dh) &&
+                        int.TryParse(dw, out int w) && int.TryParse(dh, out int h) &&
+                        w >= 200 && h >= 200)
+                    {
+                        activityLayoutSize[currentActivity] = $"{w}x{h}";
                     }
                 }
                 else if (elemName == "intent-filter" && currentActivity != null)
@@ -236,7 +273,103 @@ public static class ApkManifestParser
         }
 
         meta.LauncherActivity = ResolveDirectActivity(meta.PackageName, meta.LauncherActivity);
+
+        // Determine preferred orientation, resizability (window-able), and supported screen sizes for the target UI activity
+        string orientation = "unspecified";
+        if (activityOrientations.TryGetValue(meta.LauncherActivity, out string? actOr))
+        {
+            orientation = actOr;
+        }
+        else
+        {
+            var mainMatch = activityOrientations.FirstOrDefault(kv => kv.Key.EndsWith(".MainActivity", StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrEmpty(mainMatch.Value))
+            {
+                orientation = mainMatch.Value;
+            }
+        }
+        meta.PreferredOrientation = orientation;
+
+        bool isWindowable;
+        if (activityResizable.TryGetValue(meta.LauncherActivity, out bool explicitActRes))
+        {
+            isWindowable = explicitActRes;
+        }
+        else if (appResizable.HasValue)
+        {
+            isWindowable = appResizable.Value && orientation == "unspecified";
+        }
+        else
+        {
+            // Android 7.0+ default: activities without a fixed portrait/landscape lock are multi-window resizable
+            isWindowable = orientation == "unspecified";
+        }
+        meta.IsWindowable = isWindowable;
+
+        PopulateScreenSizeProfile(meta, activityLayoutSize.TryGetValue(meta.LauncherActivity, out string? customLayout) ? customLayout : null);
         return meta;
+    }
+
+    public static void PopulateScreenSizeProfile(ApkMetadata meta, string? manifestLayoutSize = null)
+    {
+        meta.SupportedScreenSizes.Clear();
+        if (meta.PreferredOrientation.Equals("portrait", StringComparison.OrdinalIgnoreCase))
+        {
+            meta.PreferredScreenSize = !string.IsNullOrWhiteSpace(manifestLayoutSize) ? manifestLayoutSize : "540x960";
+            meta.SupportedScreenSizes.AddRange(new[]
+            {
+                "540x960 (Preferred — Portrait qHD 9:16)",
+                "480x854 (Supported — Portrait Compact 9:16)",
+                "720x1280 (Supported — Portrait HD 9:16)",
+                "600x960 (Supported — Portrait Tablet 10:16)",
+                "1280x720 (Compatibility — Landscape HD 16:9 *)"
+            });
+        }
+        else if (meta.PreferredOrientation.Equals("landscape", StringComparison.OrdinalIgnoreCase))
+        {
+            meta.PreferredScreenSize = !string.IsNullOrWhiteSpace(manifestLayoutSize) ? manifestLayoutSize : "1280x720";
+            meta.SupportedScreenSizes.AddRange(new[]
+            {
+                "1280x720 (Preferred — Landscape HD 16:9)",
+                "1366x768 (Supported — Widescreen 16:9)",
+                "1600x900 (Supported — Desktop HD+ 16:9)",
+                "1920x1080 (Supported — Full HD 16:9)",
+                "1024x768 (Supported — Tablet Landscape 4:3)",
+                "540x960 (Compatibility — Portrait 9:16 *)"
+            });
+        }
+        else
+        {
+            meta.PreferredScreenSize = !string.IsNullOrWhiteSpace(manifestLayoutSize) ? manifestLayoutSize : "1280x720";
+            meta.SupportedScreenSizes.AddRange(new[]
+            {
+                "1280x720 (Preferred — Landscape HD 16:9)",
+                "1024x768 (Supported — Tablet Landscape 4:3)",
+                "1366x768 (Supported — Laptop Widescreen 16:9)",
+                "1600x900 (Supported — Desktop HD+ 16:9)",
+                "960x640 (Supported — Compact Window 3:2)",
+                "800x800 (Supported — Square Multi-Window 1:1)",
+                "540x960 (Supported — Phone Portrait 9:16)",
+                "720x1280 (Supported — Portrait HD 9:16)"
+            });
+        }
+    }
+
+    private static string DecodeScreenOrientation(string rawValue)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue)) return "unspecified";
+        if (int.TryParse(rawValue, out int code))
+        {
+            return code switch
+            {
+                0 or 6 or 8 or 11 => "landscape",
+                1 or 7 or 9 or 12 => "portrait",
+                _ => "unspecified"
+            };
+        }
+        if (rawValue.Contains("portrait", StringComparison.OrdinalIgnoreCase)) return "portrait";
+        if (rawValue.Contains("landscape", StringComparison.OrdinalIgnoreCase)) return "landscape";
+        return "unspecified";
     }
 
     public static string ResolveDirectActivity(string packageName, string configuredActivity)
