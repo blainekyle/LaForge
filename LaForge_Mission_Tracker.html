@@ -293,10 +293,10 @@
       </p>
     </div>
     <div class="lmt-meta-box" id="lmt-meta-version">
-      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v0.7.10-multimonitor-resize-pinning</span></div>
+      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v0.7.11-camera-display-settings-purge</span></div>
       <div><strong>Target Runtime:</strong> Android 14 (API 34 x86_64 + WHPX)</div>
       <div><strong>Display Bridge:</strong> scrcpy v5.0.1 + SDL 3.4.18 (D3D11)</div>
-      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-14 14:12 CDT</span></div>
+      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-14 14:43 CDT</span></div>
     </div>
   </header>
 
@@ -321,7 +321,7 @@
       At <code class="inline-code">v0.4.2</code> (Step 203), the remaining roadmap was defined as <strong>Phase 5</strong> (Single-Window UX &amp; Bespoke EXEs), <strong>Phase 6</strong> (Live File Relay &amp; Windows Registry Associations), and <strong>Phase 7</strong> (Host Mic Input &amp; Graphical APK Builder).
       Subsequently, two major user-requested architectural milestones were injected ahead of the original Phase 6/7:
       (1) <strong>Bidirectional <code class="inline-code">/sdcard/HOST</code> Filesystem Bridge</strong> (<code class="inline-code">v0.5.0</code>) and
-      (2) <strong>Concurrent Multi-Display Virtual Screen Isolation, Windowing Customizations &amp; LaForge Central Console</strong> (<code class="inline-code">v0.7.0–v0.7.8</code>).
+      (2) <strong>Concurrent Multi-Display Virtual Screen Isolation, Windowing Customizations &amp; LaForge Central Console</strong> (<code class="inline-code">v0.7.0–v0.7.11</code>).
       Assigning integer phase numbers to those two sidequests bumped the original Phase 6 &amp; 7 to "Phase 8, 9, 10" in <code class="inline-code">completion_plan.md</code>, while the conversation summary still referenced "Phase 5".
       The table below establishes the <strong>canonical 7-Phase Master Roadmap</strong>.
     </div>
@@ -367,9 +367,9 @@
         <tr id="lmt-phase-5">
           <td><code class="elem-id">lmt-phase-5</code></td>
           <td><strong>Phase 5</strong><br/><small>(Injected Sidequest)</small></td>
-          <td><code class="inline-code">v0.7.0</code> &rarr; <code class="inline-code">v0.7.8</code></td>
-          <td><strong>Concurrent Multi-Display Isolation, LaForge Central Console, Splash UX, Cross-App Breakout &amp; Windowing Customizations:</strong> Per-app virtual displays (<code class="inline-code">--new-display</code>), <code class="inline-code">LaForgeConsole.exe</code> tray service, <code class="inline-code">.conf</code> policies, <code class="inline-code">0ms</code> <code class="inline-code">SW_HIDE</code> background/restore, auto QEMU shutdown, <code class="inline-code">640x160</code> splash overlay, cross-app breakout, manifest orientation/size polling (<code class="inline-code">540x960</code> portrait vs <code class="inline-code">1280x720</code> landscape), freetext <code class="inline-code">WxH*</code> override, and live aspect-ratio resizing for window-able apps.</td>
-          <td><span id="lmt-status-phase-5" class="status-badge status-yellow" data-tooltip="Core multi-display, Console, splash overlay, auto-teardown, and cross-app breakout validated by user; v0.7.8 adds manifest orientation sizing (540x960 for Camera), Gear modal WxH* overrides, and live aspect-ratio resizing for window-able apps.">◐ Pending Validation</span></td>
+          <td><code class="inline-code">v0.7.0</code> &rarr; <code class="inline-code">v0.7.11</code></td>
+          <td><strong>Concurrent Multi-Display Isolation, LaForge Central Console, Splash UX, Cross-App Breakout &amp; Windowing Customizations:</strong> Per-app virtual displays (<code class="inline-code">--new-display</code>), <code class="inline-code">LaForgeConsole.exe</code> tray service, <code class="inline-code">.conf</code> policies, <code class="inline-code">0ms</code> <code class="inline-code">SW_HIDE</code> background/restore, auto QEMU shutdown, <code class="inline-code">640x160</code> splash overlay, cross-app breakout, manifest orientation/size polling (<code class="inline-code">540x960</code> portrait vs <code class="inline-code">1280x720</code> landscape), freetext <code class="inline-code">WxH*</code> override, and live multi-monitor aspect-ratio resizing.</td>
+          <td><span id="lmt-status-phase-5" class="status-badge status-green" data-tooltip="All Phase 5 deliverables validated by user across high-DPI and multi-monitor displays.">● Validated</span></td>
         </tr>
         <tr id="lmt-phase-6">
           <td><code class="elem-id">lmt-phase-6</code></td>
@@ -500,14 +500,14 @@
         <tr id="lmt-display-window-sizing-config">
           <td><code class="elem-id">lmt-display-window-sizing-config</code></td>
           <td><strong>Manifest Orientation Polling &amp; Per-App Screen Size Override (<code class="inline-code">WxH*</code>)</strong></td>
-          <td><code class="inline-code">ApkManifestParser.cs</code> polls binary <code class="inline-code">AndroidManifest.xml</code> for <code class="inline-code">screenOrientation</code> (<code class="inline-code">portrait</code> &rarr; <code class="inline-code">540x960</code> default for <code class="inline-code">Fossify Camera</code>; <code class="inline-code">landscape</code>/<code class="inline-code">unspecified</code> &rarr; <code class="inline-code">1280x720</code>), <code class="inline-code">resizeableActivity</code> (<code class="inline-code">IsWindowable</code>), and supported sizes. Exposed in <code class="inline-code">.conf</code> (<code class="inline-code">screen_size_override</code>) and Console <code class="inline-code">⚙</code> Gear modal with preset selector + freetext <code class="inline-code">WxH*</code> override; live changes trigger <code class="inline-code">HotSwapVirtualDisplayResolutionAsync</code> (spawning a fresh <code class="inline-code">--new-display=WxH/160</code> and moving the live Android task via <code class="inline-code">move-stack</code> instead of <code class="inline-code">wm size -d</code>).</td>
-          <td><span id="lmt-status-display-window-sizing-config" class="status-badge status-yellow" data-tooltip="Cold launch config overrides validated by user; v0.7.9 replaces 'wm size -d' (which caused a black screen on Cromite) with live VirtualDisplay hot-swapping (move-stack).">◐ Pending Validation</span></td>
+          <td><code class="inline-code">ApkManifestParser.cs</code> polls binary <code class="inline-code">AndroidManifest.xml</code> for <code class="inline-code">screenOrientation</code> (<code class="inline-code">portrait</code> &rarr; <code class="inline-code">540x960</code> default for <code class="inline-code">Fossify Camera</code>; <code class="inline-code">landscape</code>/<code class="inline-code">unspecified</code> &rarr; <code class="inline-code">1280x720</code>), <code class="inline-code">resizeableActivity</code> (<code class="inline-code">IsWindowable</code>), and supported sizes. Exposed in <code class="inline-code">.conf</code> (<code class="inline-code">screen_size_override</code>) and Console <code class="inline-code">⚙</code> Gear modal with preset selector + freetext <code class="inline-code">WxH*</code> override; live changes trigger <code class="inline-code">HotSwapVirtualDisplayResolutionAsync</code>.</td>
+          <td><span id="lmt-status-display-window-sizing-config" class="status-badge status-green" data-tooltip="Validated by user across config overrides and live display hot-swaps.">● Validated</span></td>
         </tr>
         <tr id="lmt-display-live-aspect-resize">
           <td><code class="elem-id">lmt-display-live-aspect-resize</code></td>
           <td><strong>Live Multi-Aspect Window Resizing (<code class="inline-code">SCRCPY_FREE_ASPECT=1</code> + Multi-Monitor Display Hot-Swap)</strong></td>
-          <td>Patched <code class="inline-code">scrcpy.exe</code>'s <code class="inline-code">SDL_SetWindowAspectRatio</code> import thunk to pass <code class="inline-code">(0.0f, 0.0f)</code> when <code class="inline-code">SCRCPY_FREE_ASPECT=1</code> is set, unlocking SDL3's <code class="inline-code">WM_SIZING</code> aspect-ratio lock so side handles resize width or height independently (confirmed working by user). Upon mouse release, <code class="inline-code">HotSwapVirtualDisplayResolutionAsync</code> moves the live Android task to a new <code class="inline-code">WxH</code> virtual display and pins the exact outer <code class="inline-code">RECT</code> across negative-coordinate secondary monitors (<code class="inline-code">-32767..32767</code>) via <code class="inline-code">SetWindowPos</code> without <code class="inline-code">Math.Max(0, ...)</code> clamping or <code class="inline-code">+38px</code> cascade drift.</td>
-          <td><span id="lmt-status-display-live-aspect-resize" class="status-badge status-yellow" data-tooltip="Side handlebar resize validated by user; v0.7.10 fixes negative-coordinate clamping (Math.Max(0, winX/winY)) and pins exact outer RECT on secondary monitors via SetWindowPos.">◐ Pending Validation</span></td>
+          <td>Patched <code class="inline-code">scrcpy.exe</code>'s <code class="inline-code">SDL_SetWindowAspectRatio</code> import thunk to pass <code class="inline-code">(0.0f, 0.0f)</code> when <code class="inline-code">SCRCPY_FREE_ASPECT=1</code> is set, unlocking SDL3's <code class="inline-code">WM_SIZING</code> aspect-ratio lock so side handles resize width or height independently. Upon mouse release, <code class="inline-code">HotSwapVirtualDisplayResolutionAsync</code> moves the live Android task to a new <code class="inline-code">WxH</code> virtual display and pins the exact outer <code class="inline-code">RECT</code> across negative-coordinate secondary monitors (<code class="inline-code">-32767..32767</code>) via <code class="inline-code">SetWindowPos</code>.</td>
+          <td><span id="lmt-status-display-live-aspect-resize" class="status-badge status-green" data-tooltip="Validated by user across high-DPI XPS 17 display and low-DPI multi-monitor displays.">● Validated</span></td>
         </tr>
       </tbody>
     </table>
@@ -546,6 +546,12 @@
           <td><strong>CLI Standalone Bundle Builder (<code class="inline-code">--forge</code>)</strong></td>
           <td><code class="inline-code">ApkPackager.ForgeBundle</code> emits self-contained <code class="inline-code">dist/&lt;pkg&gt;/</code> folders with <code class="inline-code">&lt;AppName&gt;.exe</code>, <code class="inline-code">payload.apk</code>, <code class="inline-code">config.json</code>, <code class="inline-code">app.ico</code>, <code class="inline-code">HOST.lnk</code>, and embedded <code class="inline-code">bridge/</code>.</td>
           <td><span id="lmt-status-packager-cli-forge" class="status-badge status-green" data-tooltip="Validated across 60 automated checks in verify_phase3.ps1 and live bundle launches.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-packager-apk-icon-extract">
+          <td><code class="elem-id">lmt-packager-apk-icon-extract</code></td>
+          <td><strong>Real APK Icon Extraction with Monogram Fallback</strong></td>
+          <td>Extract the actual application icon packed inside the APK and indicated by <code class="inline-code">AndroidManifest.xml</code> (<code class="inline-code">android:icon</code> / <code class="inline-code">resources.arsc</code> / adaptive icon rendering) into <code class="inline-code">app.ico</code> and <code class="inline-code">bridge/scrcpy.png</code> on the next full <code class="inline-code">--forge</code> rebuild, falling back to the two-letter monogram badge only if no icon exists in the APK.</td>
+          <td><span id="lmt-status-packager-apk-icon-extract" class="status-badge status-orange" data-tooltip="Scheduled for next full bundle rebuild per user guidance; falls back to two-letter monogram when no APK icon is present.">○ Not Implemented</span></td>
         </tr>
         <tr id="lmt-packager-gui-builder">
           <td><code class="elem-id">lmt-packager-gui-builder</code></td>
@@ -784,12 +790,20 @@
         </tr>
         <tr id="lmt-bug-camera-pillarbox-window">
           <td><code class="elem-id">lmt-bug-camera-pillarbox-window</code></td>
-          <td><strong>Fossify Camera spawns in a <code class="inline-code">1280x720</code> landscape window with black pillarbox bars &amp; sideways preview</strong></td>
+          <td><strong>Fossify Camera spawns with landscape gray band / black bars on default launch</strong></td>
           <td>
-            <strong>Root Cause:</strong> <code class="inline-code">Fossify Camera</code> declares <code class="inline-code">android:screenOrientation="portrait"</code> in <code class="inline-code">AndroidManifest.xml</code>, but its <code class="inline-code">config.json</code> was hardcoded to <code class="inline-code">1280x720</code> (landscape). When <code class="inline-code">wm set-ignore-orientation-request true</code> locked the <code class="inline-code">1280x720</code> virtual display to <code class="inline-code">ROTATION_0</code> (landscape), Android 14 pillarboxed the portrait activity inside <code class="inline-code">1280x720</code> and CameraX received a <code class="inline-code">ROTATION_0</code> landscape display angle.<br/>
-            <strong>Fix (<code class="inline-code">v0.7.8</code>):</strong> <code class="inline-code">ApkManifestParser</code> now extracts <code class="inline-code">PreferredOrientation="portrait"</code> and sets <code class="inline-code">PreferredScreenSize="540x960"</code> so <code class="inline-code">Fossify Camera</code> launches on a native <code class="inline-code">540x960</code> portrait virtual display (<code class="inline-code">--new-display=540x960/160</code>) with zero black bars and upright CameraX orientation.
+            <strong>Root Cause (Proven via <code class="inline-code">dumpsys window displays</code> &amp; <code class="inline-code">display_settings.xml</code>):</strong> Even after setting <code class="inline-code">544x960</code> in <code class="inline-code">v0.7.8</code>, <code class="inline-code">/data/system/display_settings.xml</code> inside the <code class="inline-code">default_boot</code> snapshot contained a persisted <code class="inline-code">forcedWidth="1600" forcedHeight="904"</code> entry for <code class="inline-code">virtual:com.android.shell,2000,scrcpy,0</code> (<code class="inline-code">Display #48</code>), overriding the first virtual display from <code class="inline-code">init=544x960</code> to <code class="inline-code">base=1600x904</code>! Additionally, <code class="inline-code">wm fixed-to-user-rotation enabled</code> activated Android 14's <code class="inline-code">LetterboxUiController</code> (<code class="inline-code">Rect(545, 0 - 1056, 904)</code>).<br/>
+            <strong>Fix (<code class="inline-code">v0.7.11</code>):</strong> Purged <code class="inline-code">/data/system/display_settings.xml</code> and saved a clean <code class="inline-code">default_boot</code> snapshot (<code class="inline-code">init=544x960 cur=544x960 app=544x960</code>), set <code class="inline-code">wm fixed-to-user-rotation disabled</code> (while keeping <code class="inline-code">wm user-rotation lock 0</code> + <code class="inline-code">wm set-ignore-orientation-request true</code>), and enabled <code class="inline-code">dynamic_aspect_resize=true</code> by default.
           </td>
-          <td><span id="lmt-status-bug-camera-pillarbox-window" class="status-badge status-yellow" data-tooltip="Fixed in v0.7.8; Fossify Camera now launches on a native 540x960 portrait virtual display.">◐ Pending Validation</span></td>
+          <td><span id="lmt-status-bug-camera-pillarbox-window" class="status-badge status-yellow" data-tooltip="Fixed in v0.7.11; Display #2 verified at init=544x960 cur=544x960 app=544x960 with zero letterboxing.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-bug-cross-dpi-resize-loop">
+          <td><code class="elem-id">lmt-bug-cross-dpi-resize-loop</code></td>
+          <td><strong>Resizing a window directly across the boundary from a high-DPI monitor into a low-DPI monitor causes a redraw loop</strong></td>
+          <td>
+            <strong>Root Cause &amp; Disposition:</strong> When a single window straddles a high-DPI display (XPS 17) and a low-DPI office display during a live drag-resize, Windows DWM per-monitor DPI scaling and SDL3 window sizing enter a conflicting resize loop when the scaled window exceeds the target monitor's bounds. Recorded as a known edge-case limitation (not scheduled for immediate fix); <code class="inline-code">LaForge Console</code> Force Stop reliably terminates the process.
+          </td>
+          <td><span id="lmt-status-bug-cross-dpi-resize-loop" class="status-badge status-red" data-tooltip="Known Windows DWM / SDL3 cross-DPI boundary resize limitation; deferred intentionally per user direction (Console Force Stop cleanly recovers).">✖ Known Limitation</span></td>
         </tr>
         <tr id="lmt-bug-dist-adb-path">
           <td><code class="elem-id">lmt-bug-dist-adb-path</code></td>

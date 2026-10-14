@@ -420,10 +420,6 @@ public static class LaForgeAppRegistry
                 policy.IsWindowable = meta.IsWindowable;
                 policy.PreferredScreenSize = meta.PreferredScreenSize;
                 policy.SupportedScreenSizes = new List<string>(meta.SupportedScreenSizes);
-                if (!policy.IsWindowable)
-                {
-                    policy.DynamicAspectResize = false;
-                }
                 Save(policy);
                 return;
             }

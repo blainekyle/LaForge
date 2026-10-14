@@ -563,11 +563,11 @@ public static class Program
             if (alreadyConfigured != "1")
             {
                 string oneTimeCmd =
-                    $"wm size {win.Width}x{win.Height}; " +
-                    "wm density 160; " +
-                    "wm user-rotation lock 0; " +
-                    "wm fixed-to-user-rotation enabled; " +
-                    "wm set-ignore-orientation-request true; " +
+                    "wm size 1280x720 -d 0; " +
+                    "wm density 160 -d 0; " +
+                    "wm user-rotation -d 0 lock 0; " +
+                    "wm fixed-to-user-rotation -d 0 disabled; " +
+                    "wm set-ignore-orientation-request -d 0 true; " +
                     "pm disable-user --user 0 com.android.inputmethod.latin >/dev/null 2>&1; " +
                     "settings put global window_animation_scale 0; " +
                     "settings put global transition_animation_scale 0; " +
@@ -1115,13 +1115,13 @@ public static class Program
             return -1;
         }
 
-        // Lock virtual display rotation and ignore app orientation requests so child intents (e.g. portrait Camera inside Gallery)
-        // never rotate the virtual display or cause scrcpy to resize/reposition the host window
+        // Lock virtual display rotation to ROTATION_0 and ignore activity orientation requests,
+        // while keeping fixed-to-user-rotation disabled so Android 14 LetterboxUiController never pillarboxes portrait apps.
         try
         {
             RunProcessCaptureOutput(
                 adbExe,
-                new[] { "shell", $"wm user-rotation -d {targetDisplayId} lock 0; wm fixed-to-user-rotation -d {targetDisplayId} enabled; wm set-ignore-orientation-request -d {targetDisplayId} true" },
+                new[] { "shell", $"wm user-rotation -d {targetDisplayId} lock 0; wm fixed-to-user-rotation -d {targetDisplayId} disabled; wm set-ignore-orientation-request -d {targetDisplayId} true" },
                 2500);
         }
         catch

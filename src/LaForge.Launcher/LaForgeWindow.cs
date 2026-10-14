@@ -776,7 +776,7 @@ public sealed class LaForgeWindow : Form
             {
                 Program.RunProcessCaptureOutput(
                     adbExe,
-                    new[] { "shell", $"wm user-rotation -d {_allocatedDisplayId} lock 0; wm fixed-to-user-rotation -d {_allocatedDisplayId} enabled; wm set-ignore-orientation-request -d {_allocatedDisplayId} true; input -d {_allocatedDisplayId} keyevent 4" },
+                    new[] { "shell", $"wm user-rotation -d {_allocatedDisplayId} lock 0; wm fixed-to-user-rotation -d {_allocatedDisplayId} disabled; wm set-ignore-orientation-request -d {_allocatedDisplayId} true; input -d {_allocatedDisplayId} keyevent 4" },
                     2500);
             });
 
