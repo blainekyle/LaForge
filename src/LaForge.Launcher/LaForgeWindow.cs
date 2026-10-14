@@ -27,6 +27,10 @@ public sealed class LaForgeWindow : Form
 
     private HostFolderBridge? _hostBridge;
     private Process? _activeScrcpyProcess;
+    private LaForgeSplashOverlay? _splashOverlay;
+    private System.Windows.Forms.Timer? _crossAppTimer;
+    private int _allocatedDisplayId = -1;
+    private bool _isCheckingCrossApp;
 
     public LaForgeWindow(LaForgeConfig config, string configPath, string configDir, string? initialRelayFile)
     {
@@ -237,6 +241,9 @@ public sealed class LaForgeWindow : Form
 
         FormClosed += (_, _) =>
         {
+            _crossAppTimer?.Stop();
+            _crossAppTimer?.Dispose();
+            _splashOverlay?.DismissSafe();
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
             _hostBridge?.Dispose();
@@ -271,6 +278,14 @@ public sealed class LaForgeWindow : Form
 
                 if (!keepBackgrounded)
                 {
+                    if (!string.IsNullOrWhiteSpace(_config.App.PackageName) && File.Exists(adbExe))
+                    {
+                        try
+                        {
+                            Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "am", "force-stop", _config.App.PackageName }, 2500);
+                        }
+                        catch { }
+                    }
                     Program.StopEmulatorIfNoActiveSessions(adbExe, myScrcpyPid);
                 }
             }
@@ -387,6 +402,8 @@ public sealed class LaForgeWindow : Form
     private void AppendLog(string message, Color? color = null)
     {
         if (IsDisposed) return;
+        // Skip RichTextBox UI marshaling when the diagnostic console is hidden in Single-Window mode
+        if (!Visible || Opacity < 0.1) return;
         if (InvokeRequired)
         {
             BeginInvoke(() => AppendLog(message, color));
@@ -402,8 +419,22 @@ public sealed class LaForgeWindow : Form
     private async Task RunSessionPipelineAsync(string? relayFile)
     {
         _btnBoot.Enabled = false;
+        string friendlyName = LaForgeAppRegistry.GetFriendlyAppName(_config.App.Title, _config.App.PackageName);
+        string iconCandidate = Path.IsPathRooted(_config.App.IconPath)
+            ? _config.App.IconPath
+            : Path.GetFullPath(Path.Combine(_configDir, _config.App.IconPath));
+
         try
         {
+            _splashOverlay?.DismissSafe();
+            _splashOverlay = new LaForgeSplashOverlay(
+                $"Loading {friendlyName}...",
+                "Connecting to shared LaForge Android container...",
+                iconCandidate,
+                _config.Display.Window);
+            _splashOverlay.Show();
+            _splashOverlay.Refresh();
+
             AppendLog("====================================================================", Color.FromArgb(88, 166, 255));
             AppendLog($"Initializing LaForge Session for {_config.App.PackageName}...", Color.FromArgb(88, 166, 255));
 
@@ -437,7 +468,7 @@ public sealed class LaForgeWindow : Form
             AppPolicyConfig appPolicy = LaForgeAppRegistry.LoadOrCreate(_config, _configDir);
             _config.Storage.EnableHostMount = appPolicy.HostShareEnabled;
 
-            var emuArgs = Program.BuildEmulatorArgs(_config.Runtime);
+            var emuArgs = Program.BuildEmulatorArgs(_config.Runtime, forExecution: true);
             var scrcpyArgs = Program.BuildScrcpyArgs(_config, forExecution: true, appPolicy);
             var apkArgs = Program.BuildApkLaunchArgs(_config.App);
 
@@ -450,13 +481,21 @@ public sealed class LaForgeWindow : Form
             if (string.IsNullOrEmpty(attachedDevice) && File.Exists(emulatorExe))
             {
                 coldBootedEmulator = true;
+                _splashOverlay?.UpdateStatus(
+                    $"Preparing {friendlyName} for initial launch...",
+                    "Booting shared headless Android runtime container from snapshot...");
                 AppendLog($"No active ADB device found. Launching headless Android emulator ({emulatorExe})...", Color.FromArgb(210, 153, 34));
                 _lblRuntimeStatus.Text = "Android Guest Runtime\nBOOTING AVD...";
                 _lblRuntimeStatus.ForeColor = Color.FromArgb(210, 153, 34);
 
+                var emuEnv = new Dictionary<string, string>
+                {
+                    ["QEMU_AUDIO_OUT_DRV"] = "none"
+                };
+
                 await Task.Run(() =>
                 {
-                    Program.StartBackgroundProcess(emulatorExe, emuArgs, hidden: true);
+                    Program.StartBackgroundProcess(emulatorExe, emuArgs, hidden: true, emuEnv);
                     Program.WaitForDeviceBoot(adbExe, _config.Runtime.BootTimeoutSec);
                 });
                 attachedDevice = await Task.Run(() => Program.GetConnectedAdbDevice(adbExe));
@@ -473,13 +512,24 @@ public sealed class LaForgeWindow : Form
                     await Task.Run(() => Program.WaitForDeviceBoot(adbExe, _config.Runtime.BootTimeoutSec));
                 }
 
+                // Configure guest display and enforce app policies BEFORE launching the app on its virtual display
+                await Task.Run(() =>
+                {
+                    Program.ConfigureGuestDisplay(adbExe, _config.Display.Window);
+                    LaForgeAppRegistry.EnforcePoliciesOnGuest(adbExe, appPolicy, msg => AppendLog(msg, Color.FromArgb(210, 168, 255)));
+                });
+
                 if (!appPolicy.VirtualDisplay || !scrcpyReady)
                 {
                     if (payloadReady)
                     {
+                        _splashOverlay?.UpdateStatus(
+                            $"Preparing {friendlyName} for initial launch...",
+                            "Installing APK payload and configuring runtime permissions...");
                         AppendLog($"Sideloading {Path.GetFileName(payloadApk)} via 'adb install -r -g'...");
                         await Task.Run(() => Program.SideloadAndGrantPermissions(adbExe, payloadApk, _config.App.PackageName));
                     }
+                    _splashOverlay?.UpdateStatus($"Loading {friendlyName}...", "Starting application activity...");
                     AppendLog($"Starting {_config.App.PackageName}/{_config.App.ActivityName} on primary display...");
                     string startResult = await Task.Run(() => Program.LaunchApkWithRetry(adbExe, _config.App, 15));
                     AppendLog($"Target APK launched: {startResult}");
@@ -487,12 +537,14 @@ public sealed class LaForgeWindow : Form
 
                 if (scrcpyReady)
                 {
+                    _splashOverlay?.UpdateStatus(
+                        $"Loading {friendlyName}...",
+                        "Allocating isolated Direct3D virtual display & binding window...");
                     AppendLog("Attaching scrcpy SDL3/Direct3D virtual display bridge...");
                     string scrcpyIconPath = Path.Combine(_configDir, "bridge", "scrcpy.png");
 
                     await Task.Run(() =>
                     {
-                        int allocatedDisplayId = -1;
                         using (var vdMutex = new Mutex(false, @"Local\LaForge_VirtualDisplayAllocMutex"))
                         {
                             bool lockTaken = false;
@@ -524,11 +576,11 @@ public sealed class LaForgeWindow : Form
 
                                 if (appPolicy.VirtualDisplay && !string.IsNullOrWhiteSpace(_config.App.PackageName))
                                 {
-                                    allocatedDisplayId = Program.WaitForNewScrcpyDisplayId(adbExe, previousDisplayIds);
+                                    _allocatedDisplayId = Program.WaitForNewScrcpyDisplayId(adbExe, previousDisplayIds);
                                     Program.BindAppToVirtualDisplay(
                                         adbExe,
                                         _config.App,
-                                        allocatedDisplayId,
+                                        _allocatedDisplayId,
                                         payloadReady ? payloadApk : null,
                                         msg => AppendLog(msg, Color.FromArgb(126, 231, 135)));
                                 }
@@ -543,15 +595,13 @@ public sealed class LaForgeWindow : Form
                         }
                     });
 
-                    // Run guest display config, app policy enforcement, and Host Folder Bridge asynchronously after display is bound
+                    _splashOverlay?.DismissSafe();
+                    StartCrossAppBreakoutMonitor(adbExe);
+
+                    // Start Host Folder Bridge asynchronously after display is bound
                     _hostBridge?.Dispose();
                     _hostBridge = new HostFolderBridge(_config.Storage, adbExe, msg => AppendLog(msg, Color.FromArgb(165, 214, 255)));
-                    _ = Task.Run(() =>
-                    {
-                        Program.ConfigureGuestDisplay(adbExe, _config.Display.Window);
-                        LaForgeAppRegistry.EnforcePoliciesOnGuest(adbExe, appPolicy, msg => AppendLog(msg, Color.FromArgb(210, 168, 255)));
-                        _hostBridge.Start();
-                    });
+                    _ = Task.Run(() => _hostBridge.Start());
 
                     if (!string.IsNullOrWhiteSpace(relayFile))
                     {
@@ -561,12 +611,12 @@ public sealed class LaForgeWindow : Form
                     if (_config.Display.AutoHideConsole)
                     {
                         AppendLog("Single-Window Mode active: hiding Control Console to System Tray (double-click tray icon to restore).", Color.FromArgb(88, 166, 255));
-                        await Task.Delay(250);
                         HideToSystemTray();
                     }
                 }
                 else
                 {
+                    _splashOverlay?.DismissSafe();
                     _hostBridge?.Dispose();
                     _hostBridge = new HostFolderBridge(_config.Storage, adbExe, msg => AppendLog(msg, Color.FromArgb(165, 214, 255)));
                     _ = Task.Run(() => _hostBridge.Start());
@@ -579,6 +629,7 @@ public sealed class LaForgeWindow : Form
             }
             else
             {
+                _splashOverlay?.DismissSafe();
                 Opacity = 1;
                 ShowInTaskbar = true;
                 Show();
@@ -600,6 +651,7 @@ public sealed class LaForgeWindow : Form
         }
         catch (Exception ex)
         {
+            _splashOverlay?.DismissSafe();
             AppendLog($"[Error] {ex.Message}", Color.FromArgb(255, 123, 114));
         }
         finally
@@ -608,6 +660,72 @@ public sealed class LaForgeWindow : Form
             {
                 _btnBoot.Enabled = true;
             }
+        }
+    }
+
+    private void StartCrossAppBreakoutMonitor(string adbExe)
+    {
+        if (_allocatedDisplayId <= 0 || string.IsNullOrWhiteSpace(_config.App.PackageName)) return;
+
+        _crossAppTimer?.Stop();
+        _crossAppTimer?.Dispose();
+        _crossAppTimer = new System.Windows.Forms.Timer { Interval = 1800 };
+        _crossAppTimer.Tick += async (_, _) => await CheckCrossAppBreakoutAsync(adbExe);
+        _crossAppTimer.Start();
+    }
+
+    private async Task CheckCrossAppBreakoutAsync(string adbExe)
+    {
+        if (_isCheckingCrossApp || _allocatedDisplayId <= 0 || IsDisposed) return;
+        if (_activeScrcpyProcess == null || _activeScrcpyProcess.HasExited) return;
+
+        _isCheckingCrossApp = true;
+        try
+        {
+            string? topPkg = await Task.Run(() => Program.GetTopResumedPackageOnDisplay(adbExe, _allocatedDisplayId));
+            if (string.IsNullOrWhiteSpace(topPkg) ||
+                topPkg.Equals(_config.App.PackageName, StringComparison.OrdinalIgnoreCase) ||
+                topPkg.StartsWith("com.android.", StringComparison.OrdinalIgnoreCase) ||
+                topPkg.StartsWith("com.google.android.", StringComparison.OrdinalIgnoreCase) ||
+                topPkg.Equals("android", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            // Check if topPkg is another remembered LaForge app (e.g., Fossify Camera invoked from Fossify Gallery)
+            var remembered = LaForgeAppRegistry.DiscoverRememberedApps(_configDir);
+            var targetApp = remembered.FirstOrDefault(a => a.PackageName.Equals(topPkg, StringComparison.OrdinalIgnoreCase));
+            if (targetApp == null) return;
+
+            // 1. Pop the foreign activity off our virtual display so the caller app stays cleanly in its own window
+            await Task.Run(() =>
+            {
+                Program.RunProcessCaptureOutput(
+                    adbExe,
+                    new[] { "shell", $"input -d {_allocatedDisplayId} keyevent 4" },
+                    2500);
+            });
+
+            // 2. Restore the called app's window if already running/backgrounded, or launch its standalone EXE (which shows "Loading <App>...")
+            if (!LaForgeAppRegistry.TryRestoreOrFocusAppWindow(targetApp) &&
+                !string.IsNullOrWhiteSpace(targetApp.ExecutablePath) &&
+                File.Exists(targetApp.ExecutablePath))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = targetApp.ExecutablePath,
+                    WorkingDirectory = Path.GetDirectoryName(targetApp.ExecutablePath) ?? _configDir,
+                    UseShellExecute = true
+                });
+            }
+        }
+        catch
+        {
+            // Ignore transient ADB errors
+        }
+        finally
+        {
+            _isCheckingCrossApp = false;
         }
     }
 

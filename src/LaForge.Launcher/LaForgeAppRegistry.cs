@@ -40,6 +40,7 @@ public sealed class AppLiveTelemetry
     public int AndroidUid { get; set; }
     public int AndroidPid { get; set; }
     public int VirtualDisplayId { get; set; } = -1;
+    public bool HasActiveAndroidTask { get; set; }
     public int ScrcpyProcessId { get; set; }
     public IntPtr ScrcpyWindowHandle { get; set; }
     public bool IsScrcpyWindowVisible { get; set; }
@@ -49,11 +50,11 @@ public sealed class AppLiveTelemetry
 
     public bool IsRunningOnDisplay =>
         (ScrcpyProcessId > 0 && IsScrcpyWindowVisible) ||
-        (ScrcpyProcessId <= 0 && VirtualDisplayId > 0);
+        (ScrcpyProcessId <= 0 && VirtualDisplayId > 0 && HasActiveAndroidTask);
 
     public bool IsBackgrounded =>
         (ScrcpyProcessId > 0 && !IsScrcpyWindowVisible) ||
-        (!IsRunningOnDisplay && AndroidPid > 0);
+        (!IsRunningOnDisplay && (HasActiveAndroidTask || IsPlayingAudio));
 
     public bool IsStopped => !IsRunningOnDisplay && !IsBackgrounded;
 }
@@ -65,6 +66,24 @@ public sealed class AppLiveTelemetry
 /// </summary>
 public static class LaForgeAppRegistry
 {
+    public static string GetFriendlyAppName(string? rawTitle, string? packageName = null)
+    {
+        string name = rawTitle ?? "";
+        if (name.StartsWith("LaForge - ", StringComparison.OrdinalIgnoreCase))
+        {
+            name = name["LaForge - ".Length..].Trim();
+        }
+        int parenIdx = name.IndexOf(" (v", StringComparison.OrdinalIgnoreCase);
+        if (parenIdx > 0)
+        {
+            name = name[..parenIdx].Trim();
+        }
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = packageName ?? "Application";
+        }
+        return name;
+    }
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
     [DllImport("user32.dll")]
@@ -472,14 +491,25 @@ public static class LaForgeAppRegistry
             string hidMode = policy.BlockHid ? "ignore" : "allow";
             string storageMode = policy.HostShareEnabled ? "allow" : "default";
 
-            // 1. Batch Audio, Mic, Storage, and HID/Sensor AppOps in a single adb shell call
+            // 1. Batch Audio, Mic, and HID/Sensor AppOps in a single adb shell call.
+            // IMPORTANT: Do NOT unconditionally set MANAGE_EXTERNAL_STORAGE on a running app, because Android's
+            // ActivityManager immediately kills any running process when MANAGE_EXTERNAL_STORAGE changes ("Killing <pkg>: MANAGE_EXTERNAL_STORAGE changed").
             string batchedAppOps =
-                $"cmd appops set {pkg} MANAGE_EXTERNAL_STORAGE {storageMode} 2>/dev/null; " +
                 $"cmd appops set {pkg} PLAY_AUDIO {audioMode}; " +
                 $"cmd appops set {pkg} TAKE_AUDIO_FOCUS {audioMode}; " +
                 $"cmd appops set {pkg} RECORD_AUDIO {micMode}; " +
                 $"cmd appops set {pkg} VIBRATE {hidMode}; " +
                 $"cmd appops set {pkg} CAMERA {hidMode}";
+
+            if (forceNetworkUpdate)
+            {
+                string currentStorage = Program.RunProcessCaptureOutput(adbExe, new[] { "shell", $"cmd appops get {pkg} MANAGE_EXTERNAL_STORAGE 2>/dev/null" }, 3000);
+                if (!currentStorage.Contains($": {storageMode}", StringComparison.OrdinalIgnoreCase))
+                {
+                    batchedAppOps = $"cmd appops set {pkg} MANAGE_EXTERNAL_STORAGE {storageMode} 2>/dev/null; " + batchedAppOps;
+                }
+            }
+
             Program.RunProcessCaptureOutput(adbExe, new[] { "shell", batchedAppOps }, 4000);
 
             // 2. Per-UID Network blocking via su 0 /system/bin/iptables + netpolicy (only when blocking or explicitly toggled)
@@ -643,11 +673,17 @@ public static class LaForgeAppRegistry
                 }
             }
 
-            // 3. Map Virtual Display IDs from dumpsys activity activities
+            // 3. Map active Virtual Display IDs from dumpsys activity activities (excluding dead 'Recent tasks:' entries)
             int currentDisplayId = -1;
             foreach (string rawLine in actOut.Split('\n'))
             {
                 string line = rawLine.Trim();
+                if (line.StartsWith("ActivityTaskSupervisor", StringComparison.Ordinal) ||
+                    line.StartsWith("Recent tasks:", StringComparison.Ordinal))
+                {
+                    break;
+                }
+
                 var dispMatch = Regex.Match(line, @"^Display\s+#(\d+)\b");
                 if (dispMatch.Success && int.TryParse(dispMatch.Groups[1].Value, out int dId))
                 {
@@ -656,6 +692,7 @@ public static class LaForgeAppRegistry
                 }
 
                 if (currentDisplayId >= 0 &&
+                    !line.Contains(" f}}", StringComparison.Ordinal) &&
                     (line.Contains("topResumedActivity=", StringComparison.Ordinal) ||
                      line.Contains("ActivityRecord{", StringComparison.Ordinal)))
                 {
@@ -664,6 +701,7 @@ public static class LaForgeAppRegistry
                         if (line.Contains(app.PackageName + "/", StringComparison.OrdinalIgnoreCase))
                         {
                             var tel = result[app.PackageName];
+                            tel.HasActiveAndroidTask = true;
                             if (currentDisplayId > 0 || tel.VirtualDisplayId < 0)
                             {
                                 tel.VirtualDisplayId = currentDisplayId;

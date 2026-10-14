@@ -569,8 +569,10 @@ public static class Program
                     "settings put secure icon_blacklist wifi,mobile,battery,airplane,bluetooth,alarm_clock,volume,zen,managed_profile,cast,hotspot,location,rotate,headset; " +
                     "setprop debug.laforge.display_configured 1";
                 RunProcessCaptureOutput(adbExe, new[] { "shell", oneTimeCmd }, 6000);
-                RunProcessCaptureOutput(adbExe, new[] { "emu", "avd", "hostmicon" }, 3000);
             }
+
+            // Always ensure host microphone bridge is active in QEMU for this emulator session
+            RunProcessCaptureOutput(adbExe, new[] { "emu", "avd", "hostmicon" }, 2500);
 
             string kioskLockCmd =
                 "wm dismiss-keyguard; " +
@@ -593,8 +595,8 @@ public static class Program
             {
                 string pmOut = RunProcessCaptureOutput(
                     adbExe,
-                    new[] { "shell", $"pm path {packageName}; appops set {packageName} MANAGE_EXTERNAL_STORAGE allow 2>/dev/null" },
-                    10000).Trim();
+                    new[] { "shell", $"pm path {packageName}" },
+                    6000).Trim();
                 alreadyInstalled = pmOut.Contains("package:", StringComparison.OrdinalIgnoreCase);
             }
             catch
@@ -708,7 +710,7 @@ public static class Program
         }
     }
 
-    public static List<string> BuildEmulatorArgs(RuntimeConfig rt)
+    public static List<string> BuildEmulatorArgs(RuntimeConfig rt, bool forExecution = false)
     {
         var list = new List<string> { "-avd", rt.AvdName };
         if (rt.Headless)
@@ -720,7 +722,14 @@ public static class Program
         {
             list.AddRange(new[] { "-snapshot", rt.Snapshot });
         }
-        list.AddRange(new[] { "-no-snapshot-save", "-no-boot-anim", "-no-audio" });
+        if (forExecution)
+        {
+            list.AddRange(new[] { "-no-snapshot-save", "-no-boot-anim", "-allow-host-audio" });
+        }
+        else
+        {
+            list.AddRange(new[] { "-no-snapshot-save", "-no-boot-anim", "-no-audio" });
+        }
         if (rt.Whpx)
         {
             list.AddRange(new[] { "-feature", "WindowsHypervisorPlatform" });
@@ -871,6 +880,10 @@ public static class Program
             {
                 list.Add($"--new-display={win.Width}x{win.Height}/160");
                 list.Add("--no-vd-system-decorations");
+                if (policy?.BackgroundOnClose ?? false)
+                {
+                    list.Add("--no-vd-destroy-content");
+                }
             }
 
             if ((policy?.MuteAudio ?? false) || otherScrcpyCount > 0)
@@ -964,11 +977,52 @@ public static class Program
         return targetDisplayId;
     }
 
+    public static string? GetTopResumedPackageOnDisplay(string adbExe, int displayId)
+    {
+        if (displayId <= 0 || !File.Exists(adbExe)) return null;
+        try
+        {
+            string actDump = RunProcessCaptureOutput(adbExe, new[] { "shell", "dumpsys", "activity", "activities" }, 3500);
+            int currentDisplay = -1;
+            foreach (string rawLine in actDump.Split('\n'))
+            {
+                string line = rawLine.Trim();
+                if (line.StartsWith("ActivityTaskSupervisor", StringComparison.Ordinal) ||
+                    line.StartsWith("Recent tasks:", StringComparison.Ordinal))
+                {
+                    break;
+                }
+
+                var dispMatch = Regex.Match(line, @"^Display\s+#(\d+)\b");
+                if (dispMatch.Success && int.TryParse(dispMatch.Groups[1].Value, out int dId))
+                {
+                    currentDisplay = dId;
+                    continue;
+                }
+
+                if (currentDisplay == displayId && line.StartsWith("topResumedActivity=", StringComparison.Ordinal))
+                {
+                    var pkgMatch = Regex.Match(line, @"u\d+\s+([a-zA-Z0-9_.]+)/");
+                    if (pkgMatch.Success)
+                    {
+                        return pkgMatch.Groups[1].Value;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+        return null;
+    }
+
     private static List<(int DisplayId, int TaskId)> GetPackageActiveTasks(string adbExe, string packageName)
     {
         var tasks = new List<(int DisplayId, int TaskId)>();
         string actDump = RunProcessCaptureOutput(adbExe, new[] { "shell", "dumpsys", "activity", "activities" }, 4000);
         int currentDisplay = -1;
+        string currentTaskOwnerPkg = "";
         var seenTasks = new HashSet<int>();
 
         foreach (string rawLine in actDump.Split('\n'))
@@ -984,6 +1038,14 @@ public static class Program
             if (dispMatch.Success && int.TryParse(dispMatch.Groups[1].Value, out int dId))
             {
                 currentDisplay = dId;
+                currentTaskOwnerPkg = "";
+                continue;
+            }
+
+            var taskHeaderMatch = Regex.Match(line, @"Task\{[^\}]*?#\d+\s+type=standard\s+A=\d+:([^\s\}]+)");
+            if (taskHeaderMatch.Success)
+            {
+                currentTaskOwnerPkg = taskHeaderMatch.Groups[1].Value;
                 continue;
             }
 
@@ -991,6 +1053,13 @@ public static class Program
                 !line.Contains(" f}}", StringComparison.Ordinal) &&
                 line.Contains(packageName + "/", StringComparison.OrdinalIgnoreCase))
             {
+                // Do not hijack another package's task if packageName was launched as a sub-activity inside that task
+                if (!string.IsNullOrEmpty(currentTaskOwnerPkg) &&
+                    !currentTaskOwnerPkg.Equals(packageName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 var taskMatch = Regex.Match(line, $@"\b{Regex.Escape(packageName)}/[^\s]+\s+t(\d+)\b", RegexOptions.IgnoreCase);
                 if (taskMatch.Success && int.TryParse(taskMatch.Groups[1].Value, out int tId) && tId > 0 && seenTasks.Add(tId))
                 {

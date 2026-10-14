@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LaForge Mission Tracker (LMT) — Master Architecture & Status Matrix</title>
+  <style>
+    :root {
+      --bg-primary: #0d1017;
+      --bg-secondary: #151923;
+      --bg-card: #181d2a;
+      --bg-hover: #1f2637;
+      --border-subtle: #283044;
+      --text-primary: #e6edf3;
+      --text-secondary: #9da7b3;
+      --text-muted: #6e7681;
+      --accent-blue: #58a6ff;
+      --accent-purple: #d2a8ff;
+      --green-bg: rgba(46, 160, 67, 0.18);
+      --green-fg: #56d364;
+      --green-border: rgba(86, 211, 100, 0.45);
+      --yellow-bg: rgba(210, 153, 34, 0.18);
+      --yellow-fg: #e3b341;
+      --yellow-border: rgba(227, 179, 65, 0.45);
+      --orange-bg: rgba(219, 109, 40, 0.18);
+      --orange-fg: #f0883e;
+      --orange-border: rgba(240, 136, 62, 0.45);
+      --red-bg: rgba(248, 81, 73, 0.18);
+      --red-fg: #ff7b72;
+      --red-border: rgba(255, 123, 114, 0.45);
+      --blue-bg: rgba(56, 139, 253, 0.18);
+      --blue-fg: #79c0ff;
+      --blue-border: rgba(121, 192, 255, 0.45);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 28px 36px 64px;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    header.lmt-header {
+      background: linear-gradient(135deg, #161c2b 0%, #101520 100%);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 24px 28px;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .lmt-title-group h1 {
+      margin: 0 0 6px 0;
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--accent-blue);
+      letter-spacing: -0.3px;
+    }
+
+    .lmt-title-group p {
+      margin: 0;
+      color: var(--text-secondary);
+      max-width: 820px;
+    }
+
+    .lmt-meta-box {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 12px;
+      color: var(--text-secondary);
+      min-width: 280px;
+    }
+
+    .lmt-meta-box div {
+      margin-bottom: 4px;
+    }
+
+    .lmt-meta-box div:last-child {
+      margin-bottom: 0;
+    }
+
+    .lmt-meta-box strong {
+      color: var(--text-primary);
+    }
+
+    .legend-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 12px 18px;
+      margin-bottom: 28px;
+      align-items: center;
+    }
+
+    .legend-title {
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-right: 8px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      cursor: help;
+      position: relative;
+      white-space: nowrap;
+      border: 1px solid transparent;
+    }
+
+    .status-green {
+      background: var(--green-bg);
+      color: var(--green-fg);
+      border-color: var(--green-border);
+    }
+
+    .status-yellow {
+      background: var(--yellow-bg);
+      color: var(--yellow-fg);
+      border-color: var(--yellow-border);
+    }
+
+    .status-orange {
+      background: var(--orange-bg);
+      color: var(--orange-fg);
+      border-color: var(--orange-border);
+    }
+
+    .status-red {
+      background: var(--red-bg);
+      color: var(--red-fg);
+      border-color: var(--red-border);
+    }
+
+    .status-blue {
+      background: var(--blue-bg);
+      color: var(--blue-fg);
+      border-color: var(--blue-border);
+    }
+
+    /* Pure CSS Tooltip on Hover */
+    .status-badge[data-tooltip]:hover::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      width: 310px;
+      padding: 9px 12px;
+      background: #090c12;
+      color: #e6edf3;
+      border: 1px solid var(--accent-blue);
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 400;
+      line-height: 1.4;
+      text-transform: none;
+      letter-spacing: 0;
+      white-space: normal;
+      z-index: 1000;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+      pointer-events: none;
+    }
+
+    section.lmt-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      margin-bottom: 26px;
+      overflow: visible;
+    }
+
+    .section-header {
+      padding: 16px 22px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-secondary);
+      border-top-left-radius: 10px;
+      border-top-right-radius: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .section-header h2 {
+      margin: 0;
+      font-size: 16.5px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .section-header span.section-sub {
+      color: var(--text-secondary);
+      font-size: 12.5px;
+    }
+
+    .retrospective-box {
+      padding: 18px 22px;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(13, 16, 23, 0.55);
+    }
+
+    .retrospective-box strong {
+      color: var(--text-primary);
+    }
+
+    table.lmt-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    table.lmt-table th {
+      background: #121620;
+      color: var(--text-secondary);
+      font-size: 11.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 11px 16px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    table.lmt-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      vertical-align: top;
+    }
+
+    table.lmt-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    table.lmt-table tbody tr:hover {
+      background-color: var(--bg-hover);
+    }
+
+    code.elem-id {
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 11.5px;
+      color: var(--accent-purple);
+      background: rgba(210, 168, 255, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(210, 168, 255, 0.22);
+      white-space: nowrap;
+      display: inline-block;
+    }
+
+    code.inline-code {
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 12px;
+      color: #a5d6ff;
+      background: rgba(56, 139, 253, 0.12);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="lmt-header" id="lmt-header-banner">
+    <div class="lmt-title-group">
+      <h1>LaForge Mission Tracker (LMT)</h1>
+      <p>
+        Single-source-of-truth architectural ledger and status tracker for <strong>LaForge (APK-to-Standalone Windows EXE Wrapper)</strong>
+        from initial PRD inception through multi-display virtual screen isolation, central console orchestration, and native desktop polish.
+      </p>
+    </div>
+    <div class="lmt-meta-box" id="lmt-meta-version">
+      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v0.7.6-splash-and-stability</span></div>
+      <div><strong>Target Runtime:</strong> Android 14 (API 34 x86_64 + WHPX)</div>
+      <div><strong>Display Bridge:</strong> scrcpy v5.0.1 + SDL 3.4.18 (D3D11)</div>
+      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-14 10:30 CDT</span></div>
+    </div>
+  </header>
+
+  <div class="legend-bar" id="lmt-legend">
+    <span class="legend-title">Status Indicators (Hover any badge for detailed tooltip):</span>
+    <span class="status-badge status-green" data-tooltip="Implemented, verified via automated tests, and validated in live operation by the user.">● Green — Validated</span>
+    <span class="status-badge status-yellow" data-tooltip="Implemented in code and verified in CLI/diagnostic tests; awaiting user confirmation in live desktop testing.">◐ Yellow — Pending Validation</span>
+    <span class="status-badge status-blue" data-tooltip="Functional baseline exists; architectural refinement or UX streamlining actively underway.">◈ Blue — In Progress / Partial</span>
+    <span class="status-badge status-orange" data-tooltip="Planned in the master project roadmap; implementation has not yet started.">○ Orange — Not Implemented</span>
+    <span class="status-badge status-red" data-tooltip="Known broken implementation or active regression discovered during testing.">✖ Red — Known Broken</span>
+  </div>
+
+  <!-- SECTION 1: CHRONOLOGICAL RETROSPECTIVE & CANONICAL PHASE ROADMAP -->
+  <section class="lmt-section" id="lmt-sec-phases">
+    <div class="section-header">
+      <h2>1. Chronological Retrospective &amp; Canonical Phase Roadmap</h2>
+      <span class="section-sub">Reconciling the original 4-phase PRD with injected architectural sidequests (Phases 1 – 7)</span>
+    </div>
+    <div class="retrospective-box">
+      <strong>Why Phase Numbering Drifted ("Phase 5" vs. "Phase 8"):</strong>
+      At inception (Step 0), the PRD defined 4 foundational phases (PoC scripts &rarr; Native C# <code class="inline-code">launcher.exe</code> &rarr; APK Packager &rarr; Embedded <code class="inline-code">scrcpy</code> Bridge).
+      At <code class="inline-code">v0.4.2</code> (Step 203), the remaining roadmap was defined as <strong>Phase 5</strong> (Single-Window UX &amp; Bespoke EXEs), <strong>Phase 6</strong> (Live File Relay &amp; Windows Registry Associations), and <strong>Phase 7</strong> (Host Mic Input &amp; Graphical APK Builder).
+      Subsequently, two major user-requested architectural milestones were injected ahead of the original Phase 6/7:
+      (1) <strong>Bidirectional <code class="inline-code">/sdcard/HOST</code> Filesystem Bridge</strong> (<code class="inline-code">v0.5.0</code>) and
+      (2) <strong>Concurrent Multi-Display Virtual Screen Isolation &amp; LaForge Central Console</strong> (<code class="inline-code">v0.7.0–v0.7.6</code>).
+      Assigning integer phase numbers to those two sidequests bumped the original Phase 6 &amp; 7 to "Phase 8, 9, 10" in <code class="inline-code">completion_plan.md</code>, while the conversation summary still referenced "Phase 5".
+      The table below establishes the <strong>canonical 7-Phase Master Roadmap</strong>.
+    </div>
+    <table class="lmt-table">
+      <thead>
+        <tr>
+          <th style="width: 170px;">Tracker ID</th>
+          <th style="width: 130px;">Canonical Phase</th>
+          <th style="width: 155px;">Git Milestone Tag</th>
+          <th>Scope &amp; Chronological Context</th>
+          <th style="width: 185px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr id="lmt-phase-1">
+          <td><code class="elem-id">lmt-phase-1</code></td>
+          <td><strong>Phase 1</strong></td>
+          <td><code class="inline-code">v0.1.0-phase1-poc</code></td>
+          <td><strong>Scaffolding &amp; Proof of Concept:</strong> Initial <code class="inline-code">config.json</code> schema, PowerShell/Python headless emulator &amp; <code class="inline-code">scrcpy</code> boundary scripts, and <code class="inline-code">verify_phase1.ps1</code> (13/13 passed).</td>
+          <td><span id="lmt-status-phase-1" class="status-badge status-green" data-tooltip="Completed at inception (v0.1.0-phase1-poc). All 13 CLI and window boundary assertions pass.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-phase-2">
+          <td><code class="elem-id">lmt-phase-2</code></td>
+          <td><strong>Phase 2</strong></td>
+          <td><code class="inline-code">v0.2.0-phase2-launcher</code></td>
+          <td><strong>Native <code class="inline-code">launcher.exe</code> &amp; Git Versioning:</strong> Compiled C#/.NET 8 wrapper replacing PoC scripts, Git repo initialized with milestone tags, verified via <code class="inline-code">verify_phase2.ps1</code> (7/7 passed).</td>
+          <td><span id="lmt-status-phase-2" class="status-badge status-green" data-tooltip="Completed and validated (v0.2.0-phase2-launcher). Native single-file executable builds cleanly.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-phase-3">
+          <td><code class="elem-id">lmt-phase-3</code></td>
+          <td><strong>Phase 3</strong></td>
+          <td><code class="inline-code">v0.3.0</code> / <code class="inline-code">v0.7.2</code></td>
+          <td><strong>Binary AXML Parser &amp; Standalone Bundle Forging:</strong> Zero-dependency <code class="inline-code">AndroidManifest.xml</code> parser (<code class="inline-code">--inspect</code>) and <code class="inline-code">--forge</code> bundle generator for all 5 Fossify apps + Cromite browser.</td>
+          <td><span id="lmt-status-phase-3" class="status-badge status-green" data-tooltip="Completed and validated across 6 real-world APKs (File Manager, Gallery, Music Player, Voice Recorder, Camera, Cromite).">● Validated</span></td>
+        </tr>
+        <tr id="lmt-phase-4">
+          <td><code class="elem-id">lmt-phase-4</code></td>
+          <td><strong>Phase 4</strong></td>
+          <td><code class="inline-code">v0.4.0</code> &rarr; <code class="inline-code">v0.6.0</code></td>
+          <td><strong>Embedded Bridge, <code class="inline-code">/sdcard/HOST</code> Share &amp; Single-Window UX:</strong> Bundled <code class="inline-code">scrcpy v5.0.1</code> + <code class="inline-code">adb v37.0.1</code>, kiosk shade lockdown, bidirectional <code class="inline-code">%LOCALAPPDATA%\LaForge\HOST</code> mount + <code class="inline-code">HOST.lnk</code>, bespoke <code class="inline-code">&lt;AppName&gt;.exe</code> binaries, custom icons, and system tray mode.</td>
+          <td><span id="lmt-status-phase-4" class="status-badge status-green" data-tooltip="Validated by user across File Manager and Music Player (confirmed MP3 copy via HOST.lnk and audio playback).">● Validated</span></td>
+        </tr>
+        <tr id="lmt-phase-5">
+          <td><code class="elem-id">lmt-phase-5</code></td>
+          <td><strong>Phase 5</strong><br/><small>(Injected Sidequest)</small></td>
+          <td><code class="inline-code">v0.7.0</code> &rarr; <code class="inline-code">v0.7.6</code></td>
+          <td><strong>Concurrent Multi-Display Isolation, LaForge Central Console, Splash UX &amp; Cross-App Breakout:</strong> Per-app virtual displays (<code class="inline-code">--new-display</code>), <code class="inline-code">LaForgeConsole.exe</code> tray service, <code class="inline-code">.conf</code> policies, <code class="inline-code">0ms</code> <code class="inline-code">SW_HIDE</code> background/restore, auto QEMU shutdown, verbose splash overlay, and cross-app virtual display breakout.</td>
+          <td><span id="lmt-status-phase-5" class="status-badge status-yellow" data-tooltip="Core multi-display, instant background/restore, and Cromite networking validated; v0.7.6 fixes for 1.5s black-screen kill, phantom background state, splash overlay, and cross-app camera breakout are ready for user validation.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-phase-6">
+          <td><code class="elem-id">lmt-phase-6</code></td>
+          <td><strong>Phase 6</strong><br/><small>(Next Up)</small></td>
+          <td><code class="inline-code">v0.8.0-planned</code></td>
+          <td><strong>Host Microphone Recording Validation &amp; Live <code class="inline-code">ACTION_VIEW</code> File Relays / Registry Associations:</strong> End-to-end host mic capture in Voice Recorder (<code class="inline-code">-allow-host-audio</code> + <code class="inline-code">hostmicon</code>), live file relay targeting specific <code class="inline-code">ACTION_VIEW</code> activities on virtual displays, and <code class="inline-code">--register</code>/<code class="inline-code">--unregister</code> Windows file associations.</td>
+          <td><span id="lmt-status-phase-6" class="status-badge status-blue" data-tooltip="Host mic flags (-allow-host-audio + hostmicon) and CLI relay scaffolding are wired in v0.7.6; Windows Registry file associations (--register/--unregister) and Virtual Display ACTION_VIEW routing remain to be completed.">◈ In Progress</span></td>
+        </tr>
+        <tr id="lmt-phase-7">
+          <td><code class="elem-id">lmt-phase-7</code></td>
+          <td><strong>Phase 7</strong><br/><small>(Final Phase)</small></td>
+          <td><code class="inline-code">v0.9.0-planned</code></td>
+          <td><strong>Graphical APK Builder in <code class="inline-code">LaForge Console</code> &amp; Enterprise APK Hardening:</strong> Visual <em>"+ Forge New APK..."</em> wizard inside <code class="inline-code">LaForgeConsole.exe</code> (drag-and-drop APK, inspect manifest, configure policies/shares, compile bundle) and compatibility testing for complex apps (e.g., Citrix Workspace).</td>
+          <td><span id="lmt-status-phase-7" class="status-badge status-orange" data-tooltip="CLI packager (--forge) is complete, but the graphical '+ Forge New APK...' builder modal inside LaForge Console and enterprise APK validation are not yet implemented.">○ Not Implemented</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- SECTION 2: CORE RUNTIME & VIRTUALIZATION ENGINE -->
+  <section class="lmt-section" id="lmt-sec-runtime">
+    <div class="section-header">
+      <h2>2. Core Android Runtime &amp; Virtualization Engine</h2>
+      <span class="section-sub">Headless QEMU / WHPX lifecycle, snapshot hygiene, CPU optimization, and audio backends</span>
+    </div>
+    <table class="lmt-table">
+      <thead>
+        <tr>
+          <th style="width: 195px;">Tracker ID</th>
+          <th style="width: 240px;">Subsystem / Feature</th>
+          <th>Implementation Details &amp; Files</th>
+          <th style="width: 185px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr id="lmt-runtime-headless-boot">
+          <td><code class="elem-id">lmt-runtime-headless-boot</code></td>
+          <td><strong>Headless Android 14 x86_64 + WHPX Boot</strong></td>
+          <td>Boots <code class="inline-code">LaForge_x86_64_API34</code> via <code class="inline-code">qemu-system-x86_64-headless.exe</code> with <code class="inline-code">-no-window</code>, <code class="inline-code">-feature WindowsHypervisorPlatform</code>, and User 0 unlock verification (<code class="inline-code">Program.WaitForDeviceBoot</code>).</td>
+          <td><span id="lmt-status-runtime-headless-boot" class="status-badge status-green" data-tooltip="Validated across cold boots and fast snapshot resumes.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-runtime-snapshot-clean">
+          <td><code class="elem-id">lmt-runtime-snapshot-clean</code></td>
+          <td><strong>Immutable <code class="inline-code">default_boot</code> Snapshot Hygiene</strong></td>
+          <td>Cold-booted pristine <code class="inline-code">default_boot</code> snapshot with <code class="inline-code">0</code> leaked displays, <code class="inline-code">0 MB</code> swap used, and pre-granted runtime permissions. Runtime sessions pass <code class="inline-code">-no-snapshot-save</code> so exits never corrupt <code class="inline-code">default_boot</code>.</td>
+          <td><span id="lmt-status-runtime-snapshot-clean" class="status-badge status-green" data-tooltip="Validated in v0.7.4/v0.7.6. Snapshot loads in ~2–3 seconds without accumulated uptime bloat.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-runtime-auto-teardown">
+          <td><code class="elem-id">lmt-runtime-auto-teardown</code></td>
+          <td><strong>Automatic Headless QEMU Teardown on Exit</strong></td>
+          <td><code class="inline-code">Program.StopEmulatorIfNoActiveSessions</code> and <code class="inline-code">LaForgeConsoleWindow.FormClosing</code> track <code class="inline-code">Local\LaForge_ConsoleServiceActiveEvent</code> and active <code class="inline-code">scrcpy</code> processes, terminating <code class="inline-code">qemu-system-x86_64-headless.exe</code> when all apps and Console close.</td>
+          <td><span id="lmt-status-runtime-auto-teardown" class="status-badge status-yellow" data-tooltip="Implemented and verified in automated teardown tests (0 remaining qemu processes); awaiting user confirmation that no RAM/CPU remains after quitting.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-runtime-sensor-cpu">
+          <td><code class="elem-id">lmt-runtime-sensor-cpu</code></td>
+          <td><strong>Idle Guest CPU Optimization (200Hz Sensors Disabled)</strong></td>
+          <td>Disabled unused emulated hardware sensors (<code class="inline-code">accelerometer</code>, <code class="inline-code">gyroscope</code>, <code class="inline-code">magnetic_field</code>, <code class="inline-code">pressure</code>, <code class="inline-code">light</code>, <code class="inline-code">gps</code>, <code class="inline-code">gsmModem</code>) in AVD <code class="inline-code">config.ini</code> and removed <code class="inline-code">--no-cleanup</code> display leaks.</td>
+          <td><span id="lmt-status-runtime-sensor-cpu" class="status-badge status-green" data-tooltip="Eliminated ~19.3% guest SensorService polling CPU overhead and SurfaceFlinger leaked display layers.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-runtime-host-mic">
+          <td><code class="elem-id">lmt-runtime-host-mic</code></td>
+          <td><strong>Host Microphone Audio Input Forwarding</strong></td>
+          <td>Updated <code class="inline-code">Program.BuildEmulatorArgs(forExecution: true)</code> to replace <code class="inline-code">-no-audio</code> with <code class="inline-code">-allow-host-audio</code> (required by QEMU to stop zeroing out mic input), paired with <code class="inline-code">QEMU_AUDIO_OUT_DRV=none</code> and <code class="inline-code">adb emu avd hostmicon</code>.</td>
+          <td><span id="lmt-status-runtime-host-mic" class="status-badge status-yellow" data-tooltip="Root cause of silent recordings identified (-no-audio and missing -allow-host-audio zeroed out input samples). Fixed in v0.7.6; awaiting live voice recording test.">◐ Pending Validation</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- SECTION 3: DISPLAY BRIDGE, VIRTUAL SCREEN ISOLATION & WINDOW UX -->
+  <section class="lmt-section" id="lmt-sec-display">
+    <div class="section-header">
+      <h2>3. Display Bridge, Virtual Screen Isolation &amp; Native Window UX</h2>
+      <span class="section-sub">scrcpy v5.0.1 Direct3D rendering, per-app virtual displays, splash overlays, and cross-app intent breakout</span>
+    </div>
+    <table class="lmt-table">
+      <thead>
+        <tr>
+          <th style="width: 195px;">Tracker ID</th>
+          <th style="width: 240px;">Subsystem / Feature</th>
+          <th>Implementation Details &amp; Files</th>
+          <th style="width: 185px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr id="lmt-display-scrcpy-d3d11">
+          <td><code class="elem-id">lmt-display-scrcpy-d3d11</code></td>
+          <td><strong>Embedded <code class="inline-code">scrcpy v5.0.1</code> + Direct3D 11 Bridge</strong></td>
+          <td>Renders guest surfaces directly into borderless or windowed SDL3/Direct3D frames with custom <code class="inline-code">SDL_ICON_PATH</code> and <code class="inline-code">--audio-codec=raw</code> low-latency PCM audio.</td>
+          <td><span id="lmt-status-display-scrcpy-d3d11" class="status-badge status-green" data-tooltip="Validated across all apps with smooth 60 FPS rendering and audio playback.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-display-virtual-screens">
+          <td><code class="elem-id">lmt-display-virtual-screens</code></td>
+          <td><strong>Concurrent Per-App Virtual Displays (<code class="inline-code">--new-display</code>)</strong></td>
+          <td>Allocates an independent <code class="inline-code">1280x720/160</code> virtual display per app serialized via <code class="inline-code">Local\LaForge_VirtualDisplayAllocMutex</code> and routes tasks via <code class="inline-code">BindAppToVirtualDisplay</code>.</td>
+          <td><span id="lmt-status-display-virtual-screens" class="status-badge status-green" data-tooltip="Validated concurrent execution without apps hiding or pausing each other.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-display-kiosk-lockdown">
+          <td><code class="elem-id">lmt-display-kiosk-lockdown</code></td>
+          <td><strong>Android Kiosk Statusbar &amp; Shade Lockdown</strong></td>
+          <td>Suppresses notification shade pull-down (<code class="inline-code">cmd statusbar send-disable-flag</code>), hides statusbar icons, disables soft keyboard (<code class="inline-code">com.android.inputmethod.latin</code>), and zeroes transition animations.</td>
+          <td><span id="lmt-status-display-kiosk-lockdown" class="status-badge status-green" data-tooltip="Validated by user; Android system chrome and notification shade are completely hidden inside app windows.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-display-instant-bg-restore">
+          <td><code class="elem-id">lmt-display-instant-bg-restore</code></td>
+          <td><strong>Instant <code class="inline-code">0ms</code> Window Backgrounding &amp; Restore</strong></td>
+          <td>Hides running <code class="inline-code">scrcpy</code> windows via Win32 <code class="inline-code">ShowWindow(hWnd, SW_HIDE)</code> and restores/focuses them in <code class="inline-code">0ms</code> via <code class="inline-code">SW_SHOW</code> + <code class="inline-code">SetForegroundWindow</code>.</td>
+          <td><span id="lmt-status-display-instant-bg-restore" class="status-badge status-green" data-tooltip="Validated by user in Step 404 ('Hot dang, looking perfect again').">● Validated</span></td>
+        </tr>
+        <tr id="lmt-display-splash-overlay">
+          <td><code class="elem-id">lmt-display-splash-overlay</code></td>
+          <td><strong>Streamlined Bootstrap &amp; Verbose Splash Overlay</strong></td>
+          <td><code class="inline-code">LaForgeSplashOverlay.cs</code> displays an immediate native borderless splash card (<code class="inline-code">"Preparing Cromite for initial launch..."</code> during cold/snapshot boot or <code class="inline-code">"Loading Fossify Camera..."</code> on warm display attach) and skips hidden RichTextBox logging overhead.</td>
+          <td><span id="lmt-status-display-splash-overlay" class="status-badge status-yellow" data-tooltip="Implemented in v0.7.6 (LaForgeSplashOverlay.cs + LaForgeWindow.cs); awaiting user visual validation on launch.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-display-cross-app-breakout">
+          <td><code class="elem-id">lmt-display-cross-app-breakout</code></td>
+          <td><strong>Cross-App Intent Virtual Display Breakout</strong></td>
+          <td><code class="inline-code">LaForgeWindow.CheckCrossAppBreakoutAsync</code> monitors <code class="inline-code">GetTopResumedPackageOnDisplay</code> on the caller's virtual display. When an app invokes another LaForge app (e.g. Gallery &rarr; Fossify Camera), it pops the sub-activity off the caller's display and launches the target app's EXE on its own virtual display with a <code class="inline-code">"Loading Fossify Camera..."</code> splash.</td>
+          <td><span id="lmt-status-display-cross-app-breakout" class="status-badge status-yellow" data-tooltip="Implemented in v0.7.6 (Program.GetTopResumedPackageOnDisplay + LaForgeWindow.CheckCrossAppBreakoutAsync); awaiting user test from Gallery's Camera button.">◐ Pending Validation</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- SECTION 4: APK INGESTION, BINARY AXML PARSER & BUNDLE PACKAGER -->
+  <section class="lmt-section" id="lmt-sec-packager">
+    <div class="section-header">
+      <h2>4. APK Ingestion, Binary AXML Parser &amp; Bundle Packager</h2>
+      <span class="section-sub">Zero-dependency manifest extraction, trampoline activity resolution, and standalone bundle compilation</span>
+    </div>
+    <table class="lmt-table">
+      <thead>
+        <tr>
+          <th style="width: 195px;">Tracker ID</th>
+          <th style="width: 240px;">Subsystem / Feature</th>
+          <th>Implementation Details &amp; Files</th>
+          <th style="width: 185px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr id="lmt-packager-axml-parser">
+          <td><code class="elem-id">lmt-packager-axml-parser</code></td>
+          <td><strong>Binary <code class="inline-code">AndroidManifest.xml</code> (AXML) Parser</strong></td>
+          <td><code class="inline-code">ApkManifestParser.cs</code> parses UTF-8/UTF-16 string pools, resource IDs, package names, version codes, launcher activities, and <code class="inline-code">ACTION_VIEW</code> MIME types directly from ZIP/APK bytes.</td>
+          <td><span id="lmt-status-packager-axml-parser" class="status-badge status-green" data-tooltip="Validated across all 6 sample APKs (including 222 MB Cromite x86_64 APK).">● Validated</span></td>
+        </tr>
+        <tr id="lmt-packager-trampoline-bypass">
+          <td><code class="elem-id">lmt-packager-trampoline-bypass</code></td>
+          <td><strong>Splash Trampoline &amp; Alias Activity Resolution</strong></td>
+          <td><code class="inline-code">ApkManifestParser.ResolveDirectActivity</code> resolves Fossify <code class="inline-code">SplashActivity.Green</code> aliases directly to <code class="inline-code">.activities.MainActivity</code> so <code class="inline-code">am start --display &lt;id&gt;</code> keeps the task on the target virtual display.</td>
+          <td><span id="lmt-status-packager-trampoline-bypass" class="status-badge status-green" data-tooltip="Validated; prevents SplashActivity trampolines from bouncing Fossify apps back to Display #0.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-packager-cli-forge">
+          <td><code class="elem-id">lmt-packager-cli-forge</code></td>
+          <td><strong>CLI Standalone Bundle Builder (<code class="inline-code">--forge</code>)</strong></td>
+          <td><code class="inline-code">ApkPackager.ForgeBundle</code> emits self-contained <code class="inline-code">dist/&lt;pkg&gt;/</code> folders with <code class="inline-code">&lt;AppName&gt;.exe</code>, <code class="inline-code">payload.apk</code>, <code class="inline-code">config.json</code>, <code class="inline-code">app.ico</code>, <code class="inline-code">HOST.lnk</code>, and embedded <code class="inline-code">bridge/</code>.</td>
+          <td><span id="lmt-status-packager-cli-forge" class="status-badge status-green" data-tooltip="Validated across 60 automated checks in verify_phase3.ps1 and live bundle launches.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-packager-gui-builder">
+          <td><code class="elem-id">lmt-packager-gui-builder</code></td>
+          <td><strong>Graphical APK Builder UI (<code class="inline-code">+ Forge New APK...</code>)</strong></td>
+          <td>Visual wizard inside <code class="inline-code">LaForgeConsole.exe</code> to select any <code class="inline-code">.apk</code> file, preview extracted manifest metadata, set initial <code class="inline-code">HOST</code> share &amp; isolation toggles, and generate a standalone bundle.</td>
+          <td><span id="lmt-status-packager-gui-builder" class="status-badge status-orange" data-tooltip="Planned for Phase 7; currently available via CLI ('launcher.exe --forge <apk> --out dist').">○ Not Implemented</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- SECTION 5: OS LINKAGES, STORAGE BRIDGE & POLICY ENFORCEMENT -->
+  <section class="lmt-section" id="lmt-sec-bridge">
+    <div class="section-header">
+      <h2>5. OS Linkages, Host Filesystem Bridge &amp; Per-App Policy Enforcement</h2>
+      <span class="section-sub">Bidirectional /sdcard/HOST sync, .conf policy store, AppOps/iptables enforcement, and file relays</span>
+    </div>
+    <table class="lmt-table">
+      <thead>
+        <tr>
+          <th style="width: 195px;">Tracker ID</th>
+          <th style="width: 240px;">Subsystem / Feature</th>
+          <th>Implementation Details &amp; Files</th>
+          <th style="width: 185px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr id="lmt-bridge-host-folder">
+          <td><code class="elem-id">lmt-bridge-host-folder</code></td>
+          <td><strong>Bidirectional <code class="inline-code">/sdcard/HOST</code> Filesystem Bridge</strong></td>
+          <td><code class="inline-code">HostFolderBridge.cs</code> creates <code class="inline-code">%LOCALAPPDATA%\LaForge\HOST</code>, drops <code class="inline-code">HOST.lnk</code> next to each EXE, and synchronizes host/guest files with Android MediaStore indexing.</td>
+          <td><span id="lmt-status-bridge-host-folder" class="status-badge status-green" data-tooltip="Validated by user in Step 226 (moved MP3 into HOST share and played it in Fossify Music Player).">● Validated</span></td>
+        </tr>
+        <tr id="lmt-bridge-conf-store">
+          <td><code class="elem-id">lmt-bridge-conf-store</code></td>
+          <td><strong>Per-App <code class="inline-code">.conf</code> Policy Store (<code class="inline-code">%LOCALAPPDATA%\LaForge\config</code>)</strong></td>
+          <td>Stores human-readable <code class="inline-code">&lt;package&gt;.conf</code> files beside <code class="inline-code">HOST/</code> controlling <code class="inline-code">virtual_display</code>, <code class="inline-code">background_on_close</code>, <code class="inline-code">block_network</code>, <code class="inline-code">mute_audio</code>, <code class="inline-code">mute_mic</code>, <code class="inline-code">block_hid</code>, and <code class="inline-code">host_share_enabled</code>.</td>
+          <td><span id="lmt-status-bridge-conf-store" class="status-badge status-green" data-tooltip="Validated; persists per-app settings across launches and Console Gear modal edits.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-bridge-safe-storage-appop">
+          <td><code class="elem-id">lmt-bridge-safe-storage-appop</code></td>
+          <td><strong>Non-Destructive <code class="inline-code">MANAGE_EXTERNAL_STORAGE</code> &amp; Pre-Launch Policy Ordering</strong></td>
+          <td>Fixed in <code class="inline-code">v0.7.6</code>: <code class="inline-code">EnforcePoliciesOnGuest</code> runs <em>before</em> <code class="inline-code">BindAppToVirtualDisplay</code> and never touches <code class="inline-code">MANAGE_EXTERNAL_STORAGE</code> on an already-running app unless toggled, preventing Android <code class="inline-code">ActivityManager</code> from killing the app 1.5s after launch.</td>
+          <td><span id="lmt-status-bridge-safe-storage-appop" class="status-badge status-yellow" data-tooltip="Root cause of 1.5s black screen crash confirmed via logcat and fixed in v0.7.6; awaiting user validation on Music Player, Voice Recorder, and Cromite.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-bridge-file-relay-cli">
+          <td><code class="elem-id">lmt-bridge-file-relay-cli</code></td>
+          <td><strong>Live <code class="inline-code">ACTION_VIEW</code> File Relay to Active Virtual Display</strong></td>
+          <td>Pushes host files to <code class="inline-code">/sdcard/Download</code> and dispatches <code class="inline-code">android.intent.action.VIEW</code>; needs <code class="inline-code">--display &lt;id&gt;</code> &amp; dedicated <code class="inline-code">VIEW</code> activity targeting when an app is already open on a virtual display.</td>
+          <td><span id="lmt-status-bridge-file-relay-cli" class="status-badge status-blue" data-tooltip="Basic file push + ACTION_VIEW intent works on Display #0; routing directly into an active Virtual Display's VIEW activity is scheduled for Phase 6.">◈ In Progress</span></td>
+        </tr>
+        <tr id="lmt-bridge-win-registry-assoc">
+          <td><code class="elem-id">lmt-bridge-win-registry-assoc</code></td>
+          <td><strong>Windows Registry File Associations (<code class="inline-code">--register</code> / <code class="inline-code">--unregister</code>)</strong></td>
+          <td>Per-user <code class="inline-code">HKCU\Software\Classes</code> file extension binding so double-clicking an associated file in Explorer opens it inside the forged LaForge app.</td>
+          <td><span id="lmt-status-bridge-win-registry-assoc" class="status-badge status-orange" data-tooltip="Planned for Phase 6; not yet implemented.">○ Not Implemented</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- SECTION 6: LAFORGE CENTRAL CONSOLE & TRAY SERVICE -->
+  <section class="lmt-section" id="lmt-sec-console">
+    <div class="section-header">
+      <h2>6. LaForge Central Console &amp; System Tray Service (<code class="inline-code">LaForgeConsole.exe</code>)</h2>
+      <span class="section-sub">Multi-app telemetry dashboard, notification interception center, and lifecycle controls</span>
+    </div>
+    <table class="lmt-table">
+      <thead>
+        <tr>
+          <th style="width: 195px;">Tracker ID</th>
+          <th style="width: 240px;">Subsystem / Feature</th>
+          <th>Implementation Details &amp; Files</th>
+          <th style="width: 185px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr id="lmt-console-tray-dashboard">
+          <td><code class="elem-id">lmt-console-tray-dashboard</code></td>
+          <td><strong>Central Management GUI &amp; System Tray Service</strong></td>
+          <td><code class="inline-code">LaForgeConsoleWindow.cs</code> displays remembered apps with icons, live status badges, audio/mic indicators, notification counters, and a <code class="inline-code">⚙</code> policy modal.</td>
+          <td><span id="lmt-status-console-tray-dashboard" class="status-badge status-green" data-tooltip="Validated by user across multiple test sessions.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-console-accurate-bg-state">
+          <td><code class="elem-id">lmt-console-accurate-bg-state</code></td>
+          <td><strong>Accurate <code class="inline-code">STOPPED</code> vs. <code class="inline-code">BACKGROUND</code> Telemetry &amp; Clean Window Close</strong></td>
+          <td>Fixed in <code class="inline-code">v0.7.6</code>: <code class="inline-code">QueryLiveTelemetry</code> ignores dead <code class="inline-code">Recent tasks:</code> entries and cached Linux PIDs (<code class="inline-code">pidof</code> without an active Android task or audio stream), and closing a window when <code class="inline-code">background_on_close=false</code> runs <code class="inline-code">am force-stop</code>.</td>
+          <td><span id="lmt-status-console-accurate-bg-state" class="status-badge status-yellow" data-tooltip="Implemented in v0.7.6; eliminates false 'BACKGROUND (PID ...)' status when apps are closed. Awaiting user confirmation.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-console-path-resolution">
+          <td><code class="elem-id">lmt-console-path-resolution</code></td>
+          <td><strong>Multi-Level <code class="inline-code">bridge/adb.exe</code> Path Resolution &amp; Exception Guards</strong></td>
+          <td>Fixed in <code class="inline-code">v0.7.5</code>: <code class="inline-code">ResolveToolPath</code> checks <code class="inline-code">0</code>, <code class="inline-code">1</code> (<code class="inline-code">..</code>), <code class="inline-code">2</code> (<code class="inline-code">..\..</code>), and <code class="inline-code">3</code> parent levels plus sibling bundles so running <code class="inline-code">dist\LaForgeConsole.exe</code> never fails to find <code class="inline-code">adb.exe</code>.</td>
+          <td><span id="lmt-status-console-path-resolution" class="status-badge status-green" data-tooltip="Fixed and verified in v0.7.5.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-console-notif-center">
+          <td><code class="elem-id">lmt-console-notif-center</code></td>
+          <td><strong>Intercepted Android Notification Center</strong></td>
+          <td>Parses <code class="inline-code">dumpsys notification --noredact</code> for all remembered packages and displays title, text, and channel in the bottom Console table with a <em>Clear All Notifications</em> action.</td>
+          <td><span id="lmt-status-console-notif-center" class="status-badge status-green" data-tooltip="Implemented and validated in LaForge Console.">● Validated</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- SECTION 7: FORGED APPLICATION BUNDLES & TARGET COMPATIBILITY MATRIX -->
+  <section class="lmt-section" id="lmt-sec-bundles">
+    <div class="section-header">
+      <h2>7. Forged Application Bundles &amp; Compatibility Matrix</h2>
+      <span class="section-sub">Per-bundle validation status across all 6 forged apps in dist/ plus future enterprise targets</span>
+    </div>
+    <table class="lmt-table">
+      <thead>
+        <tr>
+          <th style="width: 195px;">Tracker ID</th>
+          <th style="width: 220px;">Application Bundle</th>
+          <th style="width: 210px;">Package &amp; Direct Activity</th>
+          <th>Validation Notes</th>
+          <th style="width: 185px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr id="lmt-bundle-filemanager">
+          <td><code class="elem-id">lmt-bundle-filemanager</code></td>
+          <td><strong>Fossify File Manager</strong><br/><small><code class="inline-code">FossifyFilemanager.exe</code></small></td>
+          <td><code class="inline-code">org.fossify.filemanager</code><br/><small><code class="inline-code">.activities.MainActivity</code></small></td>
+          <td>Validated browsing <code class="inline-code">/sdcard/HOST</code>, copying MP3 files from Windows host, and virtual display rendering.</td>
+          <td><span id="lmt-status-bundle-filemanager" class="status-badge status-green" data-tooltip="Validated by user across multiple sessions.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-bundle-gallery">
+          <td><code class="elem-id">lmt-bundle-gallery</code></td>
+          <td><strong>Fossify Gallery</strong><br/><small><code class="inline-code">FossifyGallery.exe</code></small></td>
+          <td><code class="inline-code">org.fossify.gallery</code><br/><small><code class="inline-code">.activities.MainActivity</code></small></td>
+          <td>Validated smooth rendering and interaction; Camera button intent now wired to break <code class="inline-code">Fossify Camera</code> out into its own virtual display window (<code class="inline-code">v0.7.6</code>).</td>
+          <td><span id="lmt-status-bundle-gallery" class="status-badge status-green" data-tooltip="Validated by user ('Gallery did not go black on me, and I was able to use it').">● Validated</span></td>
+        </tr>
+        <tr id="lmt-bundle-musicplayer">
+          <td><code class="elem-id">lmt-bundle-musicplayer</code></td>
+          <td><strong>Fossify Music Player</strong><br/><small><code class="inline-code">FossifyMusicplayer.exe</code></small></td>
+          <td><code class="inline-code">org.fossify.musicplayer</code><br/><small><code class="inline-code">.activities.MainActivity</code></small></td>
+          <td>Audio playback validated; 1.5s black screen crash caused by post-launch <code class="inline-code">MANAGE_EXTERNAL_STORAGE</code> appop fixed in <code class="inline-code">v0.7.6</code>.</td>
+          <td><span id="lmt-status-bundle-musicplayer" class="status-badge status-yellow" data-tooltip="Audio playback validated earlier; v0.7.6 fix for the 1.5s post-launch black screen kill is verified in logcat and ready for user re-test.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-bundle-voicerecorder">
+          <td><code class="elem-id">lmt-bundle-voicerecorder</code></td>
+          <td><strong>Fossify Voice Recorder</strong><br/><small><code class="inline-code">FossifyVoicerecorder.exe</code></small></td>
+          <td><code class="inline-code">org.fossify.voicerecorder</code><br/><small><code class="inline-code">.activities.MainActivity</code></small></td>
+          <td>1.5s black screen kill fixed, <code class="inline-code">RECORD_AUDIO</code> pre-granted in <code class="inline-code">default_boot</code>, and <code class="inline-code">-allow-host-audio</code> enabled in <code class="inline-code">v0.7.6</code> so host mic input is no longer zeroed out.</td>
+          <td><span id="lmt-status-bundle-voicerecorder" class="status-badge status-yellow" data-tooltip="Black screen fix and -allow-host-audio microphone passthrough applied in v0.7.6; awaiting live voice recording test.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-bundle-camera">
+          <td><code class="elem-id">lmt-bundle-camera</code></td>
+          <td><strong>Fossify Camera</strong><br/><small><code class="inline-code">FossifyCamera.exe</code></small></td>
+          <td><code class="inline-code">org.fossify.camera</code><br/><small><code class="inline-code">.activities.MainActivity</code></small></td>
+          <td>Forged with emulated back camera enabled; <code class="inline-code">CAMERA</code> permission pre-granted and cross-app breakout from Gallery wired in <code class="inline-code">v0.7.6</code>.</td>
+          <td><span id="lmt-status-bundle-camera" class="status-badge status-yellow" data-tooltip="Validated launching via Android chooser in Gallery; standalone virtual display breakout wired in v0.7.6.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-bundle-cromite">
+          <td><code class="elem-id">lmt-bundle-cromite</code></td>
+          <td><strong>Cromite Browser (x86_64)</strong><br/><small><code class="inline-code">Cromite.exe</code></small></td>
+          <td><code class="inline-code">org.cromite.cromite</code><br/><small><code class="inline-code">org.chromium.chrome.browser.ChromeTabbedActivity</code></small></td>
+          <td>Network passthrough validated; 1.5s post-launch black screen kill from <code class="inline-code">EnforcePoliciesOnGuest</code> fixed in <code class="inline-code">v0.7.6</code>.</td>
+          <td><span id="lmt-status-bundle-cromite" class="status-badge status-yellow" data-tooltip="Network passthrough confirmed by user; 1.5s post-launch black screen kill fixed in v0.7.6.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-bundle-citrix">
+          <td><code class="elem-id">lmt-bundle-citrix</code></td>
+          <td><strong>Citrix Workspace (Future Target)</strong><br/><small>Not yet ingested</small></td>
+          <td><code class="inline-code">com.citrix.Receiver</code><br/><small>(Future Phase 7 test target)</small></td>
+          <td>Root CLI test fixture placeholder cleaned up in <code class="inline-code">v0.7.5</code>; actual Citrix APK will be tested in Phase 7 once all core isolation and GMS/WebView requirements are ready.</td>
+          <td><span id="lmt-status-bundle-citrix" class="status-badge status-orange" data-tooltip="Deferred intentionally per user guidance until final product hardening in Phase 7.">○ Not Implemented</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- SECTION 8: ACTIVE DEFECT & REGRESSION LOG -->
+  <section class="lmt-section" id="lmt-sec-bugs">
+    <div class="section-header">
+      <h2>8. Defect &amp; Regression Log (Root Cause Analysis &amp; Resolution)</h2>
+      <span class="section-sub">Tracked bugs from live user testing and their exact technical root causes</span>
+    </div>
+    <table class="lmt-table">
+      <thead>
+        <tr>
+          <th style="width: 195px;">Tracker ID</th>
+          <th style="width: 240px;">Reported Symptom</th>
+          <th>Root Cause &amp; Fix Applied</th>
+          <th style="width: 185px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr id="lmt-bug-15s-black-screen">
+          <td><code class="elem-id">lmt-bug-15s-black-screen</code></td>
+          <td><strong>Music Player, Recorder &amp; Cromite go black ~1.5s after interface appears</strong></td>
+          <td>
+            <strong>Root Cause (Proven via <code class="inline-code">adb logcat</code>):</strong> <code class="inline-code">LaForgeWindow.cs</code> ran <code class="inline-code">EnforcePoliciesOnGuest</code> asynchronously in <code class="inline-code">Task.Run</code> <em>after</em> launching the app. When <code class="inline-code">cmd appops set &lt;pkg&gt; MANAGE_EXTERNAL_STORAGE allow</code> executed ~1.5s after launch, Android's <code class="inline-code">ActivityManager</code> logged <code class="inline-code">Killing &lt;pid&gt;:&lt;pkg&gt;: MANAGE_EXTERNAL_STORAGE changed</code> and destroyed the <code class="inline-code">ActivityRecord</code>, leaving the virtual display black.<br/>
+            <strong>Fix (<code class="inline-code">v0.7.6</code>):</strong> Pre-granted all runtime permissions + <code class="inline-code">MANAGE_EXTERNAL_STORAGE allow</code> in <code class="inline-code">default_boot</code>, moved <code class="inline-code">EnforcePoliciesOnGuest</code> <em>before</em> activity launch, and stopped <code class="inline-code">EnforcePoliciesOnGuest</code> from touching <code class="inline-code">MANAGE_EXTERNAL_STORAGE</code> on running processes.
+          </td>
+          <td><span id="lmt-status-bug-15s-black-screen" class="status-badge status-yellow" data-tooltip="Fixed in v0.7.6 and verified in logcat (0 app kills after 6s+ run); awaiting user validation.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-bug-phantom-bg-on-close">
+          <td><code class="elem-id">lmt-bug-phantom-bg-on-close</code></td>
+          <td><strong>Console shows closed apps as <code class="inline-code">BACKGROUND</code> &amp; closing a window moves it to <code class="inline-code">BACKGROUND</code></strong></td>
+          <td>
+            <strong>Root Cause:</strong> (1) <code class="inline-code">QueryLiveTelemetry</code> treated any cached Linux process (<code class="inline-code">pidof &gt; 0</code>) as <code class="inline-code">IsBackgrounded</code> and scanned into <code class="inline-code">Recent tasks:</code> in <code class="inline-code">dumpsys activity activities</code>. (2) <code class="inline-code">org.fossify.gallery.conf</code> had <code class="inline-code">background_on_close=true</code> from earlier Gear testing, and closing a window when <code class="inline-code">background_on_close=false</code> didn't run <code class="inline-code">am force-stop</code> in <code class="inline-code">FormClosed</code>.<br/>
+            <strong>Fix (<code class="inline-code">v0.7.6</code>):</strong> <code class="inline-code">IsBackgrounded</code> now requires an active non-finishing <code class="inline-code">ActivityRecord</code> or active audio stream (ignoring <code class="inline-code">Recent tasks:</code> and cached PIDs), and closing a window with <code class="inline-code">background_on_close=false</code> runs <code class="inline-code">am force-stop</code>.
+          </td>
+          <td><span id="lmt-status-bug-phantom-bg-on-close" class="status-badge status-yellow" data-tooltip="Fixed in v0.7.6; awaiting user validation.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-bug-mic-silence">
+          <td><code class="elem-id">lmt-bug-mic-silence</code></td>
+          <td><strong>Voice Recorder generates silent audio files from host microphone</strong></td>
+          <td>
+            <strong>Root Cause:</strong> <code class="inline-code">Program.BuildEmulatorArgs</code> passed <code class="inline-code">-no-audio</code> and omitted <code class="inline-code">-allow-host-audio</code> (which QEMU's help documents as: <em>"Allows sending of audio from audio input devices. Otherwise, zeroes out audio."</em>).<br/>
+            <strong>Fix (<code class="inline-code">v0.7.6</code>):</strong> Live emulator launches now pass <code class="inline-code">-allow-host-audio</code> with <code class="inline-code">QEMU_AUDIO_OUT_DRV=none</code> and <code class="inline-code">adb emu avd hostmicon</code>, and pre-grant <code class="inline-code">RECORD_AUDIO</code>.
+          </td>
+          <td><span id="lmt-status-bug-mic-silence" class="status-badge status-yellow" data-tooltip="Fixed in v0.7.6; awaiting live microphone recording test in Fossify Voice Recorder.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-bug-gallery-camera-same-window">
+          <td><code class="elem-id">lmt-bug-gallery-camera-same-window</code></td>
+          <td><strong>Invoking Camera from Gallery loads Fossify Camera inside Gallery's window</strong></td>
+          <td>
+            <strong>Root Cause:</strong> Android launches intents resolved via chooser inside the calling display/task (<code class="inline-code">Display #2</code>) by default.<br/>
+            <strong>Fix (<code class="inline-code">v0.7.6</code>):</strong> Added <code class="inline-code">CheckCrossAppBreakoutAsync</code> in <code class="inline-code">LaForgeWindow.cs</code> to detect when <code class="inline-code">topResumedActivity</code> on the caller's display switches to another remembered LaForge package, pop the foreign activity off the caller's display, and launch the target app's standalone EXE on its own virtual display with a <code class="inline-code">"Loading Fossify Camera..."</code> splash screen.
+          </td>
+          <td><span id="lmt-status-bug-gallery-camera-same-window" class="status-badge status-yellow" data-tooltip="Implemented in v0.7.6; awaiting user test.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-bug-dist-adb-path">
+          <td><code class="elem-id">lmt-bug-dist-adb-path</code></td>
+          <td><strong><code class="inline-code">Win32Exception: 'bridge/adb.exe'</code> when stopping an app from <code class="inline-code">dist\LaForgeConsole.exe</code></strong></td>
+          <td>
+            <strong>Root Cause &amp; Fix (<code class="inline-code">v0.7.5</code>):</strong> <code class="inline-code">ResolveToolPath</code> checked <code class="inline-code">0</code> and <code class="inline-code">2</code> parent levels, skipping <code class="inline-code">1</code> level up (<code class="inline-code">..\bridge\adb.exe</code> from <code class="inline-code">dist\</code>). Updated to check <code class="inline-code">0..3</code> parent levels and guarded <code class="inline-code">StopAppAsync</code> with <code class="inline-code">File.Exists</code> and <code class="inline-code">try/catch</code>.
+          </td>
+          <td><span id="lmt-status-bug-dist-adb-path" class="status-badge status-green" data-tooltip="Fixed and verified in v0.7.5.">● Validated</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+</body>
+</html>
