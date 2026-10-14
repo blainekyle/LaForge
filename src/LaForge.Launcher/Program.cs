@@ -183,6 +183,8 @@ public static class Program
                 .Equals("LaForgeConsole", StringComparison.OrdinalIgnoreCase);
             bool forgeHostMount = true;
             string? relayFile = null;
+            int? relayDisplayId = null;
+            ExtraRelayFiles.Clear();
             string? inspectApk = null;
             string? forgeApk = null;
             string forgeOutDir = Path.Combine(Directory.GetCurrentDirectory(), "dist");
@@ -239,9 +241,27 @@ public static class Program
                 {
                     forgeOutDir = args[++i];
                 }
+                else if (arg.Equals("--display", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    if (int.TryParse(args[++i], out int parsedDisplayId) && parsedDisplayId >= 0)
+                    {
+                        relayDisplayId = parsedDisplayId;
+                    }
+                    else
+                    {
+                        throw new ArgumentException($"Invalid --display value '{args[i]}' (expected a non-negative integer).");
+                    }
+                }
                 else if (!arg.StartsWith('-'))
                 {
-                    relayFile = arg;
+                    if (relayFile == null)
+                    {
+                        relayFile = arg;
+                    }
+                    else
+                    {
+                        ExtraRelayFiles.Add(arg);
+                    }
                 }
             }
 
@@ -416,18 +436,21 @@ public static class Program
             // Step 4: Relay System (Windows file association -> adb push -> ACTION_VIEW intent)
             if (!string.IsNullOrWhiteSpace(relayFile))
             {
-                Console.WriteLine($"[LaForge] Step 4/4: Executing File Association Relay...");
-                var (pushArgs, intentArgs, remoteUri, mimeType) = BuildRelayArgs(config, relayFile);
-                Console.WriteLine($"  Host File  : {Path.GetFullPath(relayFile)}");
-                Console.WriteLine($"  Remote URI : {remoteUri}");
-                Console.WriteLine($"  MIME Type  : {mimeType}");
-                Console.WriteLine($"  Push Cmd   : {config.Runtime.AdbPath} {FormatArgsForDisplay(pushArgs)}");
-                Console.WriteLine($"  Intent Cmd : {config.Runtime.AdbPath} {string.Join(' ', intentArgs)}");
-
-                if (!dryRun)
+                Console.WriteLine($"[LaForge] Step 4/4: Executing File Relay...");
+                foreach (string file in new[] { relayFile }.Concat(ExtraRelayFiles))
                 {
-                    RunCheckedProcess(adbExe, pushArgs);
-                    RunCheckedProcess(adbExe, intentArgs);
+                    var (pushArgs, intentArgs, remoteUri, mimeType) = BuildRelayArgs(config, file, relayDisplayId);
+                    Console.WriteLine($"  Host File  : {Path.GetFullPath(file)}");
+                    Console.WriteLine($"  Remote URI : {remoteUri}");
+                    Console.WriteLine($"  MIME Type  : {mimeType}");
+                    Console.WriteLine($"  Push Cmd   : {config.Runtime.AdbPath} {FormatArgsForDisplay(pushArgs)}");
+                    Console.WriteLine($"  Intent Cmd : {config.Runtime.AdbPath} {string.Join(' ', intentArgs)}");
+
+                    if (!dryRun)
+                    {
+                        RunCheckedProcess(adbExe, pushArgs);
+                        RunCheckedProcess(adbExe, intentArgs);
+                    }
                 }
             }
             else
@@ -1208,7 +1231,8 @@ public static class Program
 
     public static (List<string> PushArgs, List<string> IntentArgs, string RemoteUri, string MimeType) BuildRelayArgs(
         LaForgeConfig cfg,
-        string hostFilePath)
+        string hostFilePath,
+        int? displayId = null)
     {
         string fullPath = Path.GetFullPath(hostFilePath);
         if (!File.Exists(fullPath))
@@ -1238,9 +1262,17 @@ public static class Program
             "-t", rule.MimeType,
             "-n", component
         };
+        if (displayId.HasValue)
+        {
+            // am start --display must precede the other options; place it right after "start".
+            intentArgs.InsertRange(3, new[] { "--display", displayId.Value.ToString() });
+        }
 
         return (pushArgs, intentArgs, remoteUri, rule.MimeType);
     }
+
+    /// <summary>Additional files passed positionally after the first (Explorer drag-drop onto the EXE passes every dropped file).</summary>
+    public static readonly List<string> ExtraRelayFiles = new();
 
     private static string FormatArgsForDisplay(IEnumerable<string> args)
     {

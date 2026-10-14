@@ -240,7 +240,10 @@ public sealed class LaForgeWindow : Form
         {
             if (e.Data?.GetData(DataFormats.FileDrop) is string[] files && files.Length > 0)
             {
-                await ExecuteRelayFileAsync(files[0]);
+                foreach (string dropped in files)
+                {
+                    await ExecuteRelayFileAsync(dropped);
+                }
             }
         };
 
@@ -612,7 +615,7 @@ public sealed class LaForgeWindow : Form
 
                     if (!string.IsNullOrWhiteSpace(relayFile))
                     {
-                        await ExecuteRelayFileAsync(relayFile);
+                        await ExecuteInitialRelaysAsync(relayFile);
                     }
 
                     if (_config.Display.AutoHideConsole)
@@ -630,7 +633,7 @@ public sealed class LaForgeWindow : Form
 
                     if (!string.IsNullOrWhiteSpace(relayFile))
                     {
-                        await ExecuteRelayFileAsync(relayFile);
+                        await ExecuteInitialRelaysAsync(relayFile);
                     }
                 }
             }
@@ -652,7 +655,7 @@ public sealed class LaForgeWindow : Form
 
                 if (!string.IsNullOrWhiteSpace(relayFile) && File.Exists(relayFile))
                 {
-                    await ExecuteRelayFileAsync(relayFile);
+                    await ExecuteInitialRelaysAsync(relayFile);
                 }
             }
         }
@@ -1105,12 +1108,21 @@ public sealed class LaForgeWindow : Form
         }
     }
 
+    private async Task ExecuteInitialRelaysAsync(string firstFile)
+    {
+        await ExecuteRelayFileAsync(firstFile);
+        foreach (string extra in Program.ExtraRelayFiles)
+        {
+            await ExecuteRelayFileAsync(extra);
+        }
+    }
+
     private async Task ExecuteRelayFileAsync(string filePath)
     {
         try
         {
             string adbExe = Program.ResolveToolPath(_configDir, _config.Runtime.AdbPath, "adb.exe");
-            var (pushArgs, intentArgs, remoteUri, mimeType) = Program.BuildRelayArgs(_config, filePath);
+            var (pushArgs, intentArgs, remoteUri, mimeType) = Program.BuildRelayArgs(_config, filePath, _allocatedDisplayId > 0 ? _allocatedDisplayId : (int?)null);
 
             AppendLog("--------------------------------------------------------------------", Color.FromArgb(88, 166, 255));
             AppendLog($"[Step 4/4: File Association Relay Triggered]", Color.FromArgb(88, 166, 255));

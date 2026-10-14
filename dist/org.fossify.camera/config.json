@@ -54,10 +54,6 @@
       ".pdf": {
         "mime_type": "application/pdf",
         "action": "android.intent.action.VIEW"
-      },
-      ".ica": {
-        "mime_type": "application/x-ica",
-        "action": "android.intent.action.VIEW"
       }
     }
   }

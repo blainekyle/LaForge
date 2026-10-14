@@ -2,7 +2,7 @@
 .SYNOPSIS
     LaForge File Association Relay Handler (Phase 1 Task 3)
 .DESCRIPTION
-    Catches a host file passed via Windows file associations (e.g., .ica),
+    Catches a host file passed via Windows file associations (e.g., .txt),
     pushes it to the Android guest via 'adb push', and fires an ACTION_VIEW
     intent with the configured MIME type.
 #>

@@ -1,9 +1,0 @@
-[ApplicationServers]
-PublishedApp=On
-
-[PublishedApp]
-Address=10.0.0.50
-InitialProgram=#PublishedApp
-TransportDriver=TCP/IP
-WinStationDriver=ICA 3.0
-EncryptionLevelSession=EncRC5-128

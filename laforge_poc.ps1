@@ -6,7 +6,7 @@
     2. Waits for ADB boot completion and validates custom window boundary constraints.
     3. Attaches scrcpy with SDL2/Direct3D and custom window constraints.
     4. Executes the target APK via 'adb shell am start'.
-    5. Relays host files (e.g., .ica) via 'adb push' and triggers ACTION_VIEW intents with MIME types.
+    5. Relays host files (e.g., .txt) via 'adb push' and triggers ACTION_VIEW intents with MIME types.
 #>
 [CmdletBinding()]
 param (

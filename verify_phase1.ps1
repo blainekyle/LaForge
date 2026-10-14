@@ -7,7 +7,7 @@
     2. Headless emulator command generation (-no-window, -gpu host, -snapshot, WHPX).
     3. Display bridge (scrcpy) window boundary constraints & out-of-bounds rejection.
     4. Target APK launch command via 'adb shell am start'.
-    5. Relay system: catching sample.ica, 'adb push', and 'android.intent.action.VIEW' intent with MIME type.
+    5. Relay system: catching sample.txt, 'adb push', and 'android.intent.action.VIEW' intent with MIME type.
 #>
 [CmdletBinding()]
 param()
@@ -77,19 +77,19 @@ Assert-Condition $invalidThrown "Task 2f: Out-of-bounds window dimensions are re
 
 # Test 3: Target APK Execution via ADB
 $apkCmd = Get-ApkLaunchCommand -Config $cfg
-Assert-Condition ($apkCmd.CommandLine -eq "adb shell am start -W -n com.citrix.Receiver/com.citrix.client.LauncherActivity") "Task 3a: Target APK launched via 'adb shell am start'" $apkCmd.CommandLine
+Assert-Condition ($apkCmd.CommandLine -eq "adb shell am start -W -n org.fossify.filemanager/org.fossify.filemanager.activities.MainActivity") "Task 3a: Target APK launched via 'adb shell am start'" $apkCmd.CommandLine
 
-# Test 4: File Association Relay System (.ica)
-$sampleIca = Join-Path $PSScriptRoot "sample.ica"
-$relay = Get-RelayCommands -Config $cfg -HostFilePath $sampleIca
-Assert-Condition ($relay.PushCommand.CommandLine -match 'adb push ".*sample\.ica" "/sdcard/Download/sample\.ica"') "Task 3b: Relay executes 'adb push' to /sdcard/Download/sample.ica" $relay.PushCommand.CommandLine
-Assert-Condition ($relay.IntentCommand.CommandLine -match "adb shell am start -a android\.intent\.action\.VIEW -d file:///sdcard/Download/sample\.ica -t application/x-ica -n com\.citrix\.Receiver/com\.citrix\.client\.LauncherActivity") "Task 3c: Relay triggers ACTION_VIEW intent with file URI and application/x-ica MIME type" $relay.IntentCommand.CommandLine
+# Test 4: File Association Relay System (.txt)
+$sampleFile = Join-Path $PSScriptRoot "sample.txt"
+$relay = Get-RelayCommands -Config $cfg -HostFilePath $sampleFile
+Assert-Condition ($relay.PushCommand.CommandLine -match 'adb push ".*sample\.txt" "/sdcard/Download/sample\.txt"') "Task 3b: Relay executes 'adb push' to /sdcard/Download/sample.txt" $relay.PushCommand.CommandLine
+Assert-Condition ($relay.IntentCommand.CommandLine -match "adb shell am start -a android\.intent\.action\.VIEW -d file:///sdcard/Download/sample\.txt -t text/plain -n org\.fossify\.filemanager/org\.fossify\.filemanager\.activities\.MainActivity") "Task 3c: Relay triggers ACTION_VIEW intent with file URI and text/plain MIME type" $relay.IntentCommand.CommandLine
 
 # Test 5: End-to-End DryRun Execution of laforge_poc.ps1 and relay.ps1
 Write-Host "`n--- Running End-to-End DryRun Session ---" -ForegroundColor Cyan
-$e2eOut = (& (Join-Path $PSScriptRoot "laforge_poc.ps1") -RelayFilePath $sampleIca -DryRun | Out-String)
+$e2eOut = (& (Join-Path $PSScriptRoot "laforge_poc.ps1") -RelayFilePath $sampleFile -DryRun | Out-String)
 Write-Host $e2eOut
-$relayOut = (& (Join-Path $PSScriptRoot "relay.ps1") -FilePath $sampleIca -DryRun | Out-String)
+$relayOut = (& (Join-Path $PSScriptRoot "relay.ps1") -FilePath $sampleFile -DryRun | Out-String)
 Write-Host $relayOut
 
 Write-Host "============================================================" -ForegroundColor Yellow

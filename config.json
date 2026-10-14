@@ -2,8 +2,8 @@
   "app": {
     "title": "LaForge Standalone App",
     "apk_path": "./payload.apk",
-    "package_name": "com.citrix.Receiver",
-    "activity_name": "com.citrix.client.LauncherActivity"
+    "package_name": "org.fossify.filemanager",
+    "activity_name": "org.fossify.filemanager.activities.MainActivity"
   },
   "runtime": {
     "emulator_path": "emulator",
@@ -40,16 +40,12 @@
   "relays": {
     "remote_staging_dir": "/sdcard/Download",
     "associations": {
-      ".ica": {
-        "mime_type": "application/x-ica",
-        "action": "android.intent.action.VIEW"
-      },
-      ".rdp": {
-        "mime_type": "application/x-rdp",
-        "action": "android.intent.action.VIEW"
-      },
       ".pdf": {
         "mime_type": "application/pdf",
+        "action": "android.intent.action.VIEW"
+      },
+      ".txt": {
+        "mime_type": "text/plain",
         "action": "android.intent.action.VIEW"
       }
     }

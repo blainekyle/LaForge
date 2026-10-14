@@ -296,8 +296,8 @@ STATUS COLORS: green=Validated | yellow=Pending Validation | blue=In Progress/Pa
 UPDATE RECIPE (finishing a feature): in its row AND in the lmt-phase-N roadmap row, swap status-COLOR -> status-green, set badge text to
   "Validated" (keep the leading emoji from an existing green badge), and rewrite the data-tooltip with date + what was verified.
   Edit via a python/PowerShell regex keyed on the unique id; never rewrite the whole file.
-POLICY: retail/commercial APKs are deliberately NOT part of the build or tests; do not add them as targets.
-LAST UPDATED: 2026-10-14, v0.8.1 (Phase 6/6A validated). Phase 7 (relay CLI + registry assoc) is next.
+POLICY: no Windows registry or file-association edits (descoped by design). Retail/commercial APKs are deliberately NOT part of the build or tests; do not add them as targets.
+LAST UPDATED: 2026-10-14, v0.8.1 (Phase 6/6A validated). Phase 7 = file relay only (relay row pending visual validation).
 =======================================================================================================
 -->
 
@@ -398,8 +398,8 @@ LAST UPDATED: 2026-10-14, v0.8.1 (Phase 6/6A validated). Phase 7 (relay CLI + re
           <td><code class="elem-id">lmt-phase-7</code></td>
           <td><strong>Phase 7</strong><br/><small>(Next Phase)</small></td>
           <td><code class="inline-code">v0.9.0-planned</code></td>
-          <td><strong>Live <code class="inline-code">ACTION_VIEW</code> File Relays to Active Virtual Displays &amp; Windows Registry Associations:</strong> Virtual Display <code class="inline-code">ACTION_VIEW</code> file relay routing (<code class="inline-code">--relay-file</code>) and <code class="inline-code">--register</code>/<code class="inline-code">--unregister</code> Windows <code class="inline-code">HKCU\Software\Classes</code> file associations.</td>
-          <td><span id="lmt-status-phase-7" class="status-badge status-blue" data-tooltip="Basic file push + ACTION_VIEW intent works on Display #0; Virtual Display ACTION_VIEW relay and Windows Registry file associations (--register/--unregister) are next.">◈ In Progress</span></td>
+          <td><strong>Live <code class="inline-code">ACTION_VIEW</code> File Relay to Active Virtual Displays:</strong> Virtual Display <code class="inline-code">ACTION_VIEW</code> file relay (<code class="inline-code">--display &lt;id&gt;</code>, multi-file, drag-and-drop). Windows registry / file-association edits are intentionally descoped by design.</td>
+          <td><span id="lmt-status-phase-7" class="status-badge status-blue" data-tooltip="Relay with --display targeting and multi-file drop implemented 2026-10-14; awaiting human visual confirmation. Registry file associations descoped by design.">◈ In Progress</span></td>
         </tr>
         <tr id="lmt-phase-8">
           <td><code class="elem-id">lmt-phase-8</code></td>
@@ -623,14 +623,8 @@ LAST UPDATED: 2026-10-14, v0.8.1 (Phase 6/6A validated). Phase 7 (relay CLI + re
         <tr id="lmt-bridge-file-relay-cli">
           <td><code class="elem-id">lmt-bridge-file-relay-cli</code></td>
           <td><strong>Live <code class="inline-code">ACTION_VIEW</code> File Relay to Active Virtual Display</strong></td>
-          <td>Pushes host files to <code class="inline-code">/sdcard/Download</code> and dispatches <code class="inline-code">android.intent.action.VIEW</code>; needs <code class="inline-code">--display &lt;id&gt;</code> &amp; dedicated <code class="inline-code">VIEW</code> activity targeting when an app is already open on a virtual display.</td>
-          <td><span id="lmt-status-bridge-file-relay-cli" class="status-badge status-blue" data-tooltip="Basic file push + ACTION_VIEW intent works on Display #0; routing directly into an active Virtual Display's VIEW activity is scheduled for Phase 7.">◈ In Progress</span></td>
-        </tr>
-        <tr id="lmt-bridge-win-registry-assoc">
-          <td><code class="elem-id">lmt-bridge-win-registry-assoc</code></td>
-          <td><strong>Windows Registry File Associations (<code class="inline-code">--register</code> / <code class="inline-code">--unregister</code>)</strong></td>
-          <td>Per-user <code class="inline-code">HKCU\Software\Classes</code> file extension binding so double-clicking an associated file in Explorer opens it inside the forged LaForge app.</td>
-          <td><span id="lmt-status-bridge-win-registry-assoc" class="status-badge status-orange" data-tooltip="Planned for Phase 7; not yet implemented.">○ Not Implemented</span></td>
+          <td>Pushes host files to <code class="inline-code">/sdcard/Download</code> and dispatches <code class="inline-code">android.intent.action.VIEW</code>; <code class="inline-code">--display &lt;id&gt;</code> targets the app's virtual display; every dropped/passed file is relayed in order. No registry/file-association edits (descoped).</td>
+          <td><span id="lmt-status-bridge-file-relay-cli" class="status-badge status-yellow" data-tooltip="Live dispatch verified 2026-10-14: am start --display 2 reached Gallery on its virtual display; awaiting visual confirmation of the rendered file.">◈ Pending Validation</span></td>
         </tr>
       </tbody>
     </table>

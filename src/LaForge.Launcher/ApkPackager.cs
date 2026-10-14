@@ -198,7 +198,6 @@ public static class ApkPackager
             map[".zip"] = new RelayRule { MimeType = "application/zip", Action = "android.intent.action.VIEW" };
             map[".txt"] = new RelayRule { MimeType = "text/plain", Action = "android.intent.action.VIEW" };
             map[".pdf"] = new RelayRule { MimeType = "application/pdf", Action = "android.intent.action.VIEW" };
-            map[".ica"] = new RelayRule { MimeType = "application/x-ica", Action = "android.intent.action.VIEW" };
         }
 
         return map;
