@@ -1250,8 +1250,6 @@ public static class Program
         string remoteDir = cfg.Relays.RemoteStagingDir.TrimEnd('/');
         string remotePath = $"{remoteDir}/{fileName}";
         string remoteUri = $"file://{remotePath}";
-        string directActivity = ApkManifestParser.ResolveDirectActivity(cfg.App.PackageName, cfg.App.ActivityName);
-        string component = $"{cfg.App.PackageName}/{directActivity}";
 
         var pushArgs = new List<string> { "push", fullPath, remotePath };
         var intentArgs = new List<string>
@@ -1260,7 +1258,9 @@ public static class Program
             "-a", rule.Action,
             "-d", remoteUri,
             "-t", rule.MimeType,
-            "-n", component
+            // -p (not -n): let Android resolve whichever activity in the app declares the VIEW filter for this MIME
+            // (e.g. Fossify Music Player handles audio in TrackActivity, not MainActivity).
+            "-p", cfg.App.PackageName
         };
         if (displayId.HasValue)
         {
