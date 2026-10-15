@@ -237,6 +237,7 @@ public sealed class LaForgeMasterSettings
                     "-avd", avdName,
                     "-no-window",
                     "-gpu", "host",
+                    "-writable-system",
                     "-no-snapshot-load",
                     "-no-snapshot-save",
                     "-no-boot-anim",

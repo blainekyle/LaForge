@@ -635,7 +635,10 @@ public static class Program
 
             if (alreadyConfigured != "1")
             {
+                RunProcessCaptureOutput(adbExe, new[] { "root" }, 5000);
+                RunProcessCaptureOutput(adbExe, new[] { "wait-for-device" }, 5000);
                 string oneTimeCmd =
+                    "setenforce 0 2>/dev/null; " +
                     "wm size 1280x720 -d 0; " +
                     "wm density 160 -d 0; " +
                     "wm user-rotation -d 0 lock 0; " +
@@ -851,7 +854,7 @@ public static class Program
             {
                 list.Add("-no-snapshot-load");
             }
-            list.AddRange(new[] { "-no-snapshot-save", "-no-boot-anim", "-allow-host-audio" });
+            list.AddRange(new[] { "-writable-system", "-no-snapshot-save", "-no-boot-anim", "-allow-host-audio" });
             string rearCam = LaForgeMasterSettings.ExtractCameraToken(master.RearCamera);
             string frontCam = LaForgeMasterSettings.ExtractCameraToken(master.FrontCamera);
             list.AddRange(new[] { "-camera-back", rearCam, "-camera-front", frontCam });

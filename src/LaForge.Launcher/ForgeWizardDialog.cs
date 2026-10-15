@@ -267,9 +267,11 @@ public sealed class ForgeWizardDialog : Form
             string types = meta.MimeTypes.Count == 0 ? "(none declared)" : string.Join(", ", meta.MimeTypes.Take(6)) + (meta.MimeTypes.Count > 6 ? ", …" : "");
             string abiSummary = meta.NativeAbis.Count == 0
                 ? "Pure JVM / Kotlin (Universal — x86_64 Ready)"
-                : (meta.IsCompatibleWithX86_64
-                    ? $"{string.Join(", ", meta.NativeAbis)} (x86_64 Ready)"
-                    : $"{string.Join(", ", meta.NativeAbis)} (⚠ ARM-ONLY — no x86_64 slice)");
+                : (meta.UsesArm64Translation
+                    ? $"{string.Join(", ", meta.NativeAbis)} (ARM64 Translated via libndk_translation)"
+                    : (meta.IsCompatibleWithX86_64
+                        ? $"{string.Join(", ", meta.NativeAbis)} (x86_64 Native Ready)"
+                        : $"{string.Join(", ", meta.NativeAbis)} (⚠ Legacy 32-bit ARM-ONLY — no x86_64 or arm64-v8a slice)"));
 
             _lblPreview.Text =
                 $"Package   : {meta.PackageName}   (v{meta.VersionName}, code {meta.VersionCode})\n" +
@@ -281,12 +283,14 @@ public sealed class ForgeWizardDialog : Form
 
             if (meta.IsCompatibleWithX86_64)
             {
-                _lblStatus.Text = "Ready to forge.";
+                _lblStatus.Text = meta.UsesArm64Translation
+                    ? "Ready to forge (ARM64 native libraries will execute via libndk_translation)."
+                    : "Ready to forge.";
                 _lblStatus.ForeColor = Color.FromArgb(126, 231, 135);
             }
             else
             {
-                _lblStatus.Text = $"⚠ Warning: APK has ARM-only native libraries ({string.Join(", ", meta.NativeAbis)}) and will fail with INSTALL_FAILED_NO_MATCHING_ABIS on x86_64.";
+                _lblStatus.Text = $"⚠ Warning: APK only contains legacy 32-bit ARM libraries ({string.Join(", ", meta.NativeAbis)}) without an x86_64 or arm64-v8a slice.";
                 _lblStatus.ForeColor = Color.FromArgb(255, 180, 80);
             }
             _btnForge.Enabled = true;
@@ -317,10 +321,10 @@ public sealed class ForgeWizardDialog : Form
         {
             var abiConfirm = MessageBox.Show(
                 this,
-                $"This APK only contains ARM native libraries ({string.Join(", ", _meta.NativeAbis)}) and does not include an x86_64 or x86 slice.\n\n" +
-                "Because the guest Android runtime is x86_64 without ARM binary translation (Major Update 1 roadmap), Android will reject installation with INSTALL_FAILED_NO_MATCHING_ABIS.\n\n" +
+                $"This APK only contains legacy 32-bit ARM native libraries ({string.Join(", ", _meta.NativeAbis)}) and does not include a 64-bit arm64-v8a or x86_64 slice.\n\n" +
+                "LaForge supports native x86_64 and 64-bit ARM (arm64-v8a via libndk_translation), so 32-bit-only APKs will be rejected with INSTALL_FAILED_NO_MATCHING_ABIS.\n\n" +
                 "Forge this bundle anyway?",
-                "ARM-Only Native Libraries Detected",
+                "Legacy 32-Bit ARM-Only Libraries Detected",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning,
                 MessageBoxDefaultButton.Button2);

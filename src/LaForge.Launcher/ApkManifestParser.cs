@@ -21,7 +21,14 @@ public sealed class ApkMetadata
     public bool IsCompatibleWithX86_64 =>
         NativeAbis.Count == 0 ||
         NativeAbis.Any(a => a.Equals("x86_64", StringComparison.OrdinalIgnoreCase) ||
-                            a.Equals("x86", StringComparison.OrdinalIgnoreCase));
+                            a.Equals("x86", StringComparison.OrdinalIgnoreCase) ||
+                            a.Equals("arm64-v8a", StringComparison.OrdinalIgnoreCase));
+
+    public bool UsesArm64Translation =>
+        NativeAbis.Count > 0 &&
+        !NativeAbis.Any(a => a.Equals("x86_64", StringComparison.OrdinalIgnoreCase) ||
+                             a.Equals("x86", StringComparison.OrdinalIgnoreCase)) &&
+        NativeAbis.Any(a => a.Equals("arm64-v8a", StringComparison.OrdinalIgnoreCase));
 }
 
 /// <summary>

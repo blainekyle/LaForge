@@ -297,7 +297,7 @@ UPDATE RECIPE (finishing a feature): in its row AND in the lmt-phase-N roadmap r
   "Validated" (keep the leading emoji from an existing green badge), and rewrite the data-tooltip with date + what was verified.
   Edit via a python/PowerShell regex keyed on the unique id; never rewrite the whole file.
 POLICY: no Windows registry or file-association edits (descoped by design). Retail/commercial APKs are deliberately NOT part of the build or tests; do not add them as targets. Host USB passthrough is out of scope.
-LAST UPDATED: 2026-10-15, v1.0.0-rc1 (GUI Forge Builder & Per-App Uninstall validated across 6 new F-Droid apps; Master Settings, Tier 1 Special-Access AppOps, ABI Pre-Flight Check, and Console Sort/Filter UX implemented; Major Update 1 v2.0 Roadmap added).
+LAST UPDATED: 2026-10-15, v1.1.0-arm64 (64-bit ARM binary translation via Google libndk_translation v0.2.3 integrated into AOSP API 34 x86_64 runtime alongside microG + LVL stub; validated on arm64-v8a org.woheller69.whisper).
 =======================================================================================================
 -->
 
@@ -310,10 +310,10 @@ LAST UPDATED: 2026-10-15, v1.0.0-rc1 (GUI Forge Builder & Per-App Uninstall vali
       </p>
     </div>
     <div class="lmt-meta-box" id="lmt-meta-version">
-      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v1.0.0-RC1 (Release Candidate 1)</span></div>
-      <div><strong>Target Runtime:</strong> Android 14 (API 34 x86_64 + WHPX)</div>
+      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v1.1.0-arm64 (RC1 + ARM64 Translation)</span></div>
+      <div><strong>Target Runtime:</strong> Android 14 (API 34 x86_64 + WHPX + libndk_translation ARM64)</div>
       <div><strong>Display Bridge:</strong> scrcpy v5.0.1 + SDL 3.4.18 (D3D11)</div>
-      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-15 15:22 CDT</span></div>
+      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-15 17:14 CDT</span></div>
     </div>
   </header>
 
@@ -832,6 +832,13 @@ LAST UPDATED: 2026-10-15, v1.0.0-rc1 (GUI Forge Builder & Per-App Uninstall vali
           <td>Forged end-to-end via the <code class="inline-code">+ Forge New APK…</code> GUI wizard, sideloaded before virtual display allocation, uninstalled and reinstalled cleanly via Console <code class="inline-code">🗑 Uninstall App…</code>, and validated in live execution.</td>
           <td><span id="lmt-status-bundle-fdroid-suite" class="status-badge status-green" data-tooltip="Validated by user 2026-10-15 across all 6 F-Droid packages.">● Validated</span></td>
         </tr>
+        <tr id="lmt-bundle-whisper-arm64">
+          <td><code class="elem-id">lmt-bundle-whisper-arm64</code></td>
+          <td><strong>Whisper TFLite Voice Recognition (ARM64-Only NDK)</strong><br/><small><code class="inline-code">Woheller69Whisper.exe</code></small></td>
+          <td><code class="inline-code">org.woheller69.whisper</code><br/><small><code class="inline-code">com.whispertflite.DownloadActivity</code></small></td>
+          <td>64-bit ARM-only APK (<code class="inline-code">lib/arm64-v8a/*.so</code>) that previously failed with <code class="inline-code">INSTALL_FAILED_NO_MATCHING_ABIS</code>; now installs with <code class="inline-code">primaryCpuAbi=arm64-v8a</code> and executes via <code class="inline-code">libndk_translation.so</code> (<code class="inline-code">v0.2.3</code>).</td>
+          <td><span id="lmt-status-bundle-whisper-arm64" class="status-badge status-green" data-tooltip="Live-verified 2026-10-15 (v1.1.0-arm64): installed with primaryCpuAbi=arm64-v8a and launched via libndk_translation v0.2.3.">● Green — Validated</span></td>
+        </tr>
       </tbody>
     </table>
   </section>
@@ -961,9 +968,9 @@ LAST UPDATED: 2026-10-15, v1.0.0-rc1 (GUI Forge Builder & Per-App Uninstall vali
       <tbody>
         <tr id="lmt-v2-arm-translation">
           <td><code class="elem-id">lmt-v2-arm-translation</code></td>
-          <td><strong>ARM64 / ARMv7 Native Binary Translation Bridge (<code class="inline-code">libndk_translation</code> / Houdini Integration)</strong></td>
-          <td>Integrates an instruction-set translation layer (<code class="inline-code">libndk_translation</code> / Intel Houdini ABI bridge) into the <code class="inline-code">x86_64</code> Android 14 WHPX system image (<code class="inline-code">ro.product.cpu.abilist=x86_64,x86,arm64-v8a,armeabi-v7a,armeabi</code>), enabling transparent execution of ARM-only NDK applications and games without <code class="inline-code">INSTALL_FAILED_NO_MATCHING_ABIS</code> rejections.</td>
-          <td><span id="lmt-status-v2-arm-translation" class="status-badge status-orange" data-tooltip="Pegged to Major Update 1 (v2.0 Roadmap).">○ Planned — Major Update 1</span></td>
+          <td><strong>64-Bit ARM Native Binary Translation Bridge (<code class="inline-code">libndk_translation</code> v0.2.3 Integration)</strong></td>
+          <td>Integrates Google's official Android 14 (<code class="inline-code">API 34</code>) 64-bit <code class="inline-code">arm64-v8a &rarr; x86_64</code> binary translation layer (<code class="inline-code">libndk_translation.so</code> v0.2.3, <code class="inline-code">ro.product.cpu.abilist=x86_64,arm64-v8a</code>, <code class="inline-code">binfmt_misc</code> <code class="inline-code">arm64_exe</code>/<code class="inline-code">arm64_dyn</code>, and <code class="inline-code">/system/lib64/arm64/*</code> NDK proxy libraries) into the AOSP <code class="inline-code">x86_64</code> WHPX system image via Sub-path A1 while preserving <code class="inline-code">microG</code> + <code class="inline-code">services.jar</code> signature spoofing and excluding legacy 32-bit <code class="inline-code">armeabi-v7a</code> bloat.</td>
+          <td><span id="lmt-status-v2-arm-translation" class="status-badge status-green" data-tooltip="Implemented and live-verified 2026-10-15 (v1.1.0-arm64): arm64-v8a org.woheller69.whisper installs and executes cleanly via libndk_translation v0.2.3.">● Green — Validated</span></td>
         </tr>
         <tr id="lmt-v2-host-notification-bridge">
           <td><code class="elem-id">lmt-v2-host-notification-bridge</code></td>
