@@ -573,7 +573,7 @@ LAST UPDATED: 2026-10-14, v0.9.0 (Phase 6/6A/7 validated; icon engine pending hu
         <tr id="lmt-packager-apk-icon-extract">
           <td><code class="elem-id">lmt-packager-apk-icon-extract</code></td>
           <td><strong>Real APK Icon Extraction with Monogram Fallback</strong></td>
-          <td>Extract the actual application icon packed inside the APK and indicated by <code class="inline-code">AndroidManifest.xml</code> (<code class="inline-code">android:icon</code> / <code class="inline-code">resources.arsc</code> / adaptive icon rendering) into <code class="inline-code">app.ico</code> and <code class="inline-code">bridge/scrcpy.png</code> on the next full <code class="inline-code">--forge</code> rebuild, falling back to the two-letter monogram badge only if no icon exists in the APK.</td>
+          <td>Resolves a real icon on <code class="inline-code">--forge</code>: (1) F-Droid/IzzyOnDroid lookup by package name, ONLY after explicit consent (<code class="inline-code">--online-icons=yes|no</code>; one-time prompt, remembered in <code class="inline-code">%LOCALAPPDATA%\LaForge\config\icon_sources.conf</code>); (2) raster launcher icon from inside the APK via aapt2; (3) two-letter monogram. Vector-only adaptive icons are intentionally not rendered.</td>
           <td><span id="lmt-status-packager-apk-icon-extract" class="status-badge status-yellow" data-tooltip="Implemented 2026-10-14 (v0.9.0): consent-gated F-Droid/IzzyOnDroid lookup -> embedded raster via aapt2 (PNG/WebP) -> monogram. Cached per bundle (bridge/icon_source.txt); custom icons never overwritten. Tested CLI on Fossify + Cromite.">◐ Yellow — Pending Validation</span></td>
         </tr>
         <tr id="lmt-packager-gui-builder">
