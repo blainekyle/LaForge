@@ -11,14 +11,82 @@ namespace LaForge.Launcher;
 /// </summary>
 public static class AppIconGenerator
 {
-    public static (string IcoPath, string PngPath) GenerateBundleIcons(string packageName, string appSlug, string bundleDir)
+    /// <summary>
+    /// Produces app.ico + bridge/scrcpy.png for a bundle. Source order: cached/custom icon already in the bundle,
+    /// public database (only if <paramref name="allowOnlineIcons"/>), raster icon inside the APK, then the monogram.
+    /// A marker file (bridge/icon_source.txt) records the source so rebuilds never re-fetch and never clobber a custom icon.
+    /// </summary>
+    public static (string IcoPath, string PngPath) GenerateBundleIcons(
+        string packageName,
+        string appSlug,
+        string bundleDir,
+        string? apkPath = null,
+        bool allowOnlineIcons = false,
+        Action<string>? log = null)
     {
         string icoPath = Path.Combine(bundleDir, "app.ico");
         string pngPath = Path.Combine(bundleDir, "bridge", "scrcpy.png");
-        EnsureAppIcons(packageName, appSlug, icoPath, pngPath);
+        string markerPath = Path.Combine(bundleDir, "bridge", IconSourceMarkerFile);
+
+        string existing = File.Exists(markerPath) ? File.ReadAllText(markerPath).Trim() : string.Empty;
+        bool realIconCached = existing == "custom" || existing == "embedded" || existing.StartsWith("online:", StringComparison.Ordinal);
+        if (realIconCached && File.Exists(icoPath) && File.Exists(pngPath))
+        {
+            log?.Invoke($"[Icon] Reusing cached icon ({existing}).");
+            return (icoPath, pngPath);
+        }
+
+        Bitmap? resolved = null;
+        string source = "monogram";
+        if (!string.IsNullOrWhiteSpace(apkPath) && File.Exists(apkPath))
+        {
+            var result = ApkIconExtractor.Resolve(packageName, apkPath, allowOnlineIcons, log);
+            resolved = result.Bitmap;
+            if (resolved != null) source = result.Source;
+        }
+
+        if (resolved != null)
+        {
+            using (resolved)
+            {
+                SaveIconFiles(resolved, icoPath, pngPath);
+            }
+        }
+        else
+        {
+            log?.Invoke("[Icon] Falling back to generated monogram icon.");
+            EnsureAppIcons(packageName, appSlug, icoPath, pngPath);
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(markerPath)!);
+        File.WriteAllText(markerPath, source);
         return (icoPath, pngPath);
     }
 
+    /// <summary>Replaces a bundle's icon with a user-chosen image (any format GDI+/WIC can read) and locks it against rebuild overwrites.</summary>
+    public static (string IcoPath, string PngPath) ApplyCustomIcon(string bundleDir, string imageFilePath)
+    {
+        byte[] data = File.ReadAllBytes(imageFilePath);
+        using Bitmap? bmp = ApkIconExtractor.DecodeImage(data, Path.GetExtension(imageFilePath))
+            ?? throw new InvalidOperationException("That file could not be read as an image.");
+
+        string icoPath = Path.Combine(bundleDir, "app.ico");
+        string pngPath = Path.Combine(bundleDir, "bridge", "scrcpy.png");
+        SaveIconFiles(bmp, icoPath, pngPath);
+        Directory.CreateDirectory(Path.Combine(bundleDir, "bridge"));
+        File.WriteAllText(Path.Combine(bundleDir, "bridge", IconSourceMarkerFile), "custom");
+        return (icoPath, pngPath);
+    }
+
+    public const string IconSourceMarkerFile = "icon_source.txt";
+
+    public static void SaveIconFiles(Bitmap bmp, string icoPath, string pngPath)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(pngPath)!);
+        bmp.Save(pngPath, ImageFormat.Png);
+        Directory.CreateDirectory(Path.GetDirectoryName(icoPath)!);
+        SaveBitmapAsIco(bmp, icoPath);
+    }
     public static void EnsureAppIcons(string packageName, string appSlug, string icoPath, string pngPath)
     {
         using var bmp = RenderAppIconBitmap(packageName, appSlug, 256);

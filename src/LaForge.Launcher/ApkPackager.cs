@@ -4,7 +4,7 @@ namespace LaForge.Launcher;
 
 public static class ApkPackager
 {
-    public static string ForgeBundle(string apkPath, string outputRootDir, bool enableHostMount = true)
+    public static string ForgeBundle(string apkPath, string outputRootDir, bool enableHostMount = true, bool allowOnlineIcons = false, Action<string>? log = null)
     {
         ApkMetadata meta = ApkManifestParser.ParseApk(apkPath);
         string appSlug = DeriveAppSlug(meta.PackageName);
@@ -50,12 +50,17 @@ public static class ApkPackager
         {
             sourceBridgeDir = Path.Combine(Directory.GetCurrentDirectory(), "bridge");
         }
+        // A previously resolved real/custom icon must survive a rebuild: do not overwrite bridge/scrcpy.png with the default logo.
+        string iconMarkerPath = Path.Combine(bundleBridgeDir, AppIconGenerator.IconSourceMarkerFile);
+        string cachedIconSource = File.Exists(iconMarkerPath) ? File.ReadAllText(iconMarkerPath).Trim() : string.Empty;
+        bool keepCachedIcon = cachedIconSource == "custom" || cachedIconSource == "embedded" || cachedIconSource.StartsWith("online:", StringComparison.Ordinal);
         if (Directory.Exists(sourceBridgeDir))
         {
             foreach (string bridgeFile in Directory.GetFiles(sourceBridgeDir))
             {
                 string fileName = Path.GetFileName(bridgeFile);
                 if (fileName.Equals(".gitkeep", StringComparison.OrdinalIgnoreCase)) continue;
+                if (keepCachedIcon && fileName.Equals("scrcpy.png", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(bundleBridgeDir, fileName))) continue;
                 string destBridgeFile = Path.Combine(bundleBridgeDir, fileName);
                 if (!Path.GetFullPath(bridgeFile).Equals(Path.GetFullPath(destBridgeFile), StringComparison.OrdinalIgnoreCase))
                 {
@@ -65,7 +70,7 @@ public static class ApkPackager
         }
 
         // 4. Generate bespoke app.ico and bridge/scrcpy.png icons
-        AppIconGenerator.GenerateBundleIcons(meta.PackageName, appSlug, bundleDir);
+        AppIconGenerator.GenerateBundleIcons(meta.PackageName, appSlug, bundleDir, apkPath, allowOnlineIcons, log);
 
         // 5. Build bespoke config.json for the ingested APK
         var config = new LaForgeConfig

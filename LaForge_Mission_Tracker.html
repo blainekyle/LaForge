@@ -297,7 +297,7 @@ UPDATE RECIPE (finishing a feature): in its row AND in the lmt-phase-N roadmap r
   "Validated" (keep the leading emoji from an existing green badge), and rewrite the data-tooltip with date + what was verified.
   Edit via a python/PowerShell regex keyed on the unique id; never rewrite the whole file.
 POLICY: no Windows registry or file-association edits (descoped by design). Retail/commercial APKs are deliberately NOT part of the build or tests; do not add them as targets.
-LAST UPDATED: 2026-10-14, v0.8.1 (Phase 6/6A validated). Phase 7 = file relay only (relay row pending visual validation).
+LAST UPDATED: 2026-10-14, v0.9.0 (Phase 6/6A/7 validated; icon engine pending human check). Phase 7 (relay) done. Next: GUI forge builder (must include the online-icon consent checkbox using ApkIconExtractor.ConsentPrompt).
 =======================================================================================================
 -->
 
@@ -399,7 +399,7 @@ LAST UPDATED: 2026-10-14, v0.8.1 (Phase 6/6A validated). Phase 7 = file relay on
           <td><strong>Phase 7</strong><br/><small>(Next Phase)</small></td>
           <td><code class="inline-code">v0.9.0-planned</code></td>
           <td><strong>Live <code class="inline-code">ACTION_VIEW</code> File Relay to Active Virtual Displays:</strong> Virtual Display <code class="inline-code">ACTION_VIEW</code> file relay (<code class="inline-code">--display &lt;id&gt;</code>, multi-file, drag-and-drop). Windows registry / file-association edits are intentionally descoped by design.</td>
-          <td><span id="lmt-status-phase-7" class="status-badge status-blue" data-tooltip="Relay with --display targeting and multi-file drop implemented 2026-10-14; awaiting human visual confirmation. Registry file associations descoped by design.">◈ In Progress</span></td>
+          <td><span id="lmt-status-phase-7" class="status-badge status-green" data-tooltip="File relay complete 2026-10-14. Registry associations descoped by design; window drag-drop-to-open cancelled.">● Green — Validated</span></td>
         </tr>
         <tr id="lmt-phase-8">
           <td><code class="elem-id">lmt-phase-8</code></td>
@@ -574,7 +574,7 @@ LAST UPDATED: 2026-10-14, v0.8.1 (Phase 6/6A validated). Phase 7 = file relay on
           <td><code class="elem-id">lmt-packager-apk-icon-extract</code></td>
           <td><strong>Real APK Icon Extraction with Monogram Fallback</strong></td>
           <td>Extract the actual application icon packed inside the APK and indicated by <code class="inline-code">AndroidManifest.xml</code> (<code class="inline-code">android:icon</code> / <code class="inline-code">resources.arsc</code> / adaptive icon rendering) into <code class="inline-code">app.ico</code> and <code class="inline-code">bridge/scrcpy.png</code> on the next full <code class="inline-code">--forge</code> rebuild, falling back to the two-letter monogram badge only if no icon exists in the APK.</td>
-          <td><span id="lmt-status-packager-apk-icon-extract" class="status-badge status-orange" data-tooltip="Scheduled for next full bundle rebuild per user guidance; falls back to two-letter monogram when no APK icon is present.">○ Not Implemented</span></td>
+          <td><span id="lmt-status-packager-apk-icon-extract" class="status-badge status-yellow" data-tooltip="Implemented 2026-10-14 (v0.9.0): consent-gated F-Droid/IzzyOnDroid lookup -> embedded raster via aapt2 (PNG/WebP) -> monogram. Cached per bundle (bridge/icon_source.txt); custom icons never overwritten. Tested CLI on Fossify + Cromite.">◐ Yellow — Pending Validation</span></td>
         </tr>
         <tr id="lmt-packager-gui-builder">
           <td><code class="elem-id">lmt-packager-gui-builder</code></td>
@@ -624,7 +624,13 @@ LAST UPDATED: 2026-10-14, v0.8.1 (Phase 6/6A validated). Phase 7 = file relay on
           <td><code class="elem-id">lmt-bridge-file-relay-cli</code></td>
           <td><strong>Live <code class="inline-code">ACTION_VIEW</code> File Relay to Active Virtual Display</strong></td>
           <td>Pushes host files to <code class="inline-code">/sdcard/Download</code> and dispatches <code class="inline-code">android.intent.action.VIEW</code>; <code class="inline-code">--display &lt;id&gt;</code> targets the app's virtual display; every dropped/passed file is relayed in order. No registry/file-association edits (descoped).</td>
-          <td><span id="lmt-status-bridge-file-relay-cli" class="status-badge status-yellow" data-tooltip="Gallery image validated by user 2026-10-14. v0.8.3 switched relay from -n MainActivity to -p <package> so Android picks the real VIEW handler (Music Player -> TrackActivity, Gallery -> ViewPagerActivity); awaiting user confirmation that an MP3 drop plays.">◈ Pending Validation</span></td>
+          <td><span id="lmt-status-bridge-file-relay-cli" class="status-badge status-green" data-tooltip="Validated 2026-10-14 (v0.8.3): --relay-only/--display and EXE-drop relay open files in the right app activity (-p package-scoped VIEW). Gallery image confirmed by user. Window drops are scrcpy copy-to-Downloads only (see lmt-bridge-window-drop-open).">● Green — Validated</span></td>
+        </tr>
+        <tr id="lmt-bridge-window-drop-open">
+          <td><code class="elem-id">lmt-bridge-window-drop-open</code></td>
+          <td><strong>Drag-and-Drop onto App Window Opens the File</strong></td>
+          <td>Dropping a file on the scrcpy window only copies it to /sdcard/Download (scrcpy native behavior). An attempt to hook scrcpy's "successfully pushed" log line to also dispatch VIEW did not trigger and was removed. Use the app EXE drop or <code class="inline-code">--relay-only</code> instead.</td>
+          <td><span id="lmt-status-bridge-window-drop-open" class="status-badge status-red" data-tooltip="Cancelled 2026-10-14: scrcpy handles window drops itself; hook attempt dropped as not worth the effort.">✖ Cancelled</span></td>
         </tr>
       </tbody>
     </table>
@@ -669,6 +675,12 @@ LAST UPDATED: 2026-10-14, v0.8.1 (Phase 6/6A validated). Phase 7 = file relay on
           <td><strong>Intercepted Android Notification Center</strong></td>
           <td>Parses <code class="inline-code">dumpsys notification --noredact</code> for all remembered packages and displays title, text, and channel in the bottom Console table with a <em>Clear All Notifications</em> action (non-dismissible active media session notifications remain while playing, as expected).</td>
           <td><span id="lmt-status-console-notif-center" class="status-badge status-green" data-tooltip="Validated by user in Step 582 ('I've also now been able to validate that the notification center is working perfectly in Console').">● Validated</span></td>
+        </tr>
+        <tr id="lmt-console-icon-change">
+          <td><code class="elem-id">lmt-console-icon-change</code></td>
+          <td><strong>Per-App Icon Change Button (file picker)</strong></td>
+          <td>Extract the actual application icon packed inside the APK and indicated by <code class="inline-code">AndroidManifest.xml</code> (<code class="inline-code">android:icon</code> / <code class="inline-code">resources.arsc</code> / adaptive icon rendering) into <code class="inline-code">app.ico</code> and <code class="inline-code">bridge/scrcpy.png</code> on the next full <code class="inline-code">--forge</code> rebuild, falling back to the two-letter monogram badge only if no icon exists in the APK.</td>
+          <td><span id="lmt-status-console-icon-change" class="status-badge status-yellow" data-tooltip="Implemented 2026-10-14; awaiting user click-through in Console.">◐ Yellow — Pending Validation</span></td>
         </tr>
       </tbody>
     </table>

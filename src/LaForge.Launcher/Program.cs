@@ -187,6 +187,7 @@ public static class Program
             ExtraRelayFiles.Clear();
             string? inspectApk = null;
             string? forgeApk = null;
+            OnlineIconConsent? onlineIconsFlag = null;
             string forgeOutDir = Path.Combine(Directory.GetCurrentDirectory(), "dist");
 
             for (int i = 0; i < args.Length; i++)
@@ -236,6 +237,13 @@ public static class Program
                 {
                     forgeApk = args[++i];
                     cliMode = true;
+                }
+                else if (arg.StartsWith("--online-icons", StringComparison.OrdinalIgnoreCase))
+                {
+                    string? val = arg.Contains('=') ? arg.Substring(arg.IndexOf('=') + 1) : (i + 1 < args.Length && !args[i + 1].StartsWith('-') ? args[++i] : null);
+                    if (string.Equals(val, "yes", StringComparison.OrdinalIgnoreCase)) { onlineIconsFlag = OnlineIconConsent.Yes; }
+                    else if (string.Equals(val, "no", StringComparison.OrdinalIgnoreCase)) { onlineIconsFlag = OnlineIconConsent.No; }
+                    else { throw new ArgumentException("--online-icons expects 'yes' or 'no'."); }
                 }
                 else if (arg.Equals("--out", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
                 {
@@ -298,7 +306,8 @@ public static class Program
             if (!string.IsNullOrWhiteSpace(forgeApk))
             {
                 ApkMetadata meta = ApkManifestParser.ParseApk(forgeApk);
-                string bundleDir = ApkPackager.ForgeBundle(forgeApk, forgeOutDir, forgeHostMount);
+                bool allowOnlineIcons = ResolveOnlineIconConsent(onlineIconsFlag);
+                string bundleDir = ApkPackager.ForgeBundle(forgeApk, forgeOutDir, forgeHostMount, allowOnlineIcons, msg => Console.WriteLine("  " + msg));
                 Console.WriteLine($"[LaForge APK Packager] Forged standalone bundle:");
                 Console.WriteLine($"  Source APK        : {meta.ApkPath}");
                 Console.WriteLine($"  Package Name      : {meta.PackageName} (v{meta.VersionName})");
@@ -467,6 +476,40 @@ public static class Program
         }
     }
 
+    /// <summary>
+    /// Mandatory confirmation before any online icon lookup. An explicit --online-icons=yes|no is remembered; otherwise the stored
+    /// answer is used, and if nothing is stored an interactive session is asked once (like a first-run installer question).
+    /// Non-interactive runs without a stored answer default to NO.
+    /// </summary>
+    public static bool ResolveOnlineIconConsent(OnlineIconConsent? flag)
+    {
+        if (flag.HasValue)
+        {
+            ApkIconExtractor.SaveConsent(flag.Value);
+            return flag.Value == OnlineIconConsent.Yes;
+        }
+
+        OnlineIconConsent stored = ApkIconExtractor.LoadConsent();
+        if (stored != OnlineIconConsent.Unset)
+        {
+            return stored == OnlineIconConsent.Yes;
+        }
+
+        if (Console.IsInputRedirected || !Environment.UserInteractive)
+        {
+            Console.WriteLine("[Icon] Online icon lookup is off (not confirmed). Re-run with --online-icons=yes to enable it.");
+            return false;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine(ApkIconExtractor.ConsentPrompt);
+        Console.Write("Allow online icon lookups? [y/N]: ");
+        string? answer = Console.ReadLine();
+        bool yes = answer != null && answer.Trim().StartsWith("y", StringComparison.OrdinalIgnoreCase);
+        ApkIconExtractor.SaveConsent(yes ? OnlineIconConsent.Yes : OnlineIconConsent.No);
+        Console.WriteLine(yes ? "[Icon] Online icon lookups enabled (change with --online-icons=no)." : "[Icon] Online icon lookups declined (change with --online-icons=yes).");
+        return yes;
+    }
     public static string ResolveToolPath(string configDir, string configuredPath, string fallbackBridgeFileName)
     {
         if (Path.IsPathRooted(configuredPath) && File.Exists(configuredPath))

@@ -540,6 +540,12 @@ public sealed class LaForgeConsoleWindow : Form
         var btnStop = CreateButton("■", Color.FromArgb(135, 48, 52), new Point(929, 22), new Size(28, 36));
         btnStop.Click += async (_, _) => await StopAppAsync(app.PackageName);
 
+        var btnIcon = CreateButton("🖼", Color.FromArgb(62, 70, 86), new Point(48, 48), new Size(22, 22));
+        btnIcon.Font = new Font("Segoe UI Emoji", 8F);
+        btnIcon.Padding = Padding.Empty;
+        new ToolTip().SetToolTip(btnIcon, "Change this app's icon (choose an image file)");
+        btnIcon.Click += (_, _) => ChangeAppIcon(app, iconBox);
+
         var btnGear = CreateButton("⚙", Color.FromArgb(62, 70, 86), new Point(961, 22), new Size(28, 36));
         btnGear.Click += async (_, _) => await OpenAppConfigModalAsync(app.PackageName);
 
@@ -554,6 +560,8 @@ public sealed class LaForgeConsoleWindow : Form
         panel.Controls.Add(btnBg);
         panel.Controls.Add(btnStop);
         panel.Controls.Add(btnGear);
+        panel.Controls.Add(btnIcon);
+        btnIcon.BringToFront();
 
         return new AppCardControls
         {
@@ -1219,6 +1227,35 @@ public sealed class LaForgeConsoleWindow : Form
         _headlessAudioBridgeProcess = null;
     }
 
+    /// <summary>Lets the user pick any image as this bundle's icon; it is stored as a "custom" icon that rebuilds never overwrite.</summary>
+    private void ChangeAppIcon(AppPolicyConfig app, PictureBox iconBox)
+    {
+        if (string.IsNullOrWhiteSpace(app.BundleDir) || !Directory.Exists(app.BundleDir))
+        {
+            MessageBox.Show(this, "This app's bundle folder could not be found, so its icon cannot be changed.", "LaForge", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        using var dlg = new OpenFileDialog
+        {
+            Title = $"Choose an icon for {(string.IsNullOrWhiteSpace(app.AppTitle) ? app.PackageName : app.AppTitle)}",
+            Filter = "Images (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.ico;*.webp)|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.ico;*.webp|All files (*.*)|*.*",
+            CheckFileExists = true
+        };
+        if (dlg.ShowDialog(this) != DialogResult.OK) { return; }
+
+        try
+        {
+            AppIconGenerator.ApplyCustomIcon(app.BundleDir, dlg.FileName);
+            LoadCardIcon(iconBox, app);
+            MessageBox.Show(this, "Icon updated. A window that is already open keeps its old icon until the app is relaunched.", "LaForge", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"Could not use that image: {ex.Message}", "LaForge", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
     private static void LoadCardIcon(PictureBox box, AppPolicyConfig app)
     {
         try
@@ -1229,7 +1266,10 @@ public sealed class LaForgeConsoleWindow : Form
                 if (File.Exists(pngPath))
                 {
                     using var fs = new FileStream(pngPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                    box.Image = Image.FromStream(fs);
+                    using var loaded = Image.FromStream(fs);
+                    var previous = box.Image;
+                    box.Image = new Bitmap(loaded);
+                    previous?.Dispose();
                     return;
                 }
             }

@@ -12,4 +12,9 @@
     <SelfContained>false</SelfContained>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Reference WPF only for WIC image decoding (WebP launcher icons); no WPF UI or implicit usings. -->
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
+  </ItemGroup>
+
 </Project>
