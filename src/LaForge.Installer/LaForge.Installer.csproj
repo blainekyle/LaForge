@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>LaForgeSetup</AssemblyName>
+    <RootNamespace>LaForge.Installer</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <ApplicationIcon>..\..\img\laforge.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\img\laforge.ico" LogicalName="LaForge.Installer.laforge.ico" />
+    <EmbeddedResource Include="..\..\img\laforge_splash.png" LogicalName="LaForge.Installer.laforge_splash.png" />
+    <EmbeddedResource Include="installer_payload.zip" LogicalName="LaForge.Installer.installer_payload.zip" Condition="Exists('installer_payload.zip')" />
+  </ItemGroup>
+
+</Project>

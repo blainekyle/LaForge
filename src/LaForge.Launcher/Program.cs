@@ -388,7 +388,8 @@ public static class Program
                 {
                     if (string.IsNullOrEmpty(GetConnectedAdbDevice(adbExe)))
                     {
-                        StartBackgroundProcess(emulatorExe, emuArgs, hidden: true);
+                        CleanStaleAvdLocks(config.Runtime.AvdName);
+                        StartBackgroundProcess(emulatorExe, BuildEmulatorArgs(config.Runtime, forExecution: true), hidden: true);
                     }
                     WaitForDeviceBoot(adbExe, config.Runtime.BootTimeoutSec);
                     ConfigureGuestDisplay(adbExe, config.Display.Window);
@@ -523,6 +524,7 @@ public static class Program
             return relToConfig;
         }
 
+        string appDataLaForge = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LaForge");
         string[] candidates =
         {
             Path.GetFullPath(Path.Combine(configDir, "bridge", fallbackBridgeFileName)),
@@ -531,7 +533,9 @@ public static class Program
             Path.GetFullPath(Path.Combine(configDir, "..", "..", "..", "bridge", fallbackBridgeFileName)),
             Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "bridge", fallbackBridgeFileName)),
             Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "bridge", fallbackBridgeFileName)),
-            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "bridge", fallbackBridgeFileName))
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "bridge", fallbackBridgeFileName)),
+            Path.Combine(appDataLaForge, "bridge", fallbackBridgeFileName),
+            Path.Combine(@"c:\ag\APKForge\bridge", fallbackBridgeFileName)
         };
 
         foreach (string c in candidates)
@@ -568,13 +572,16 @@ public static class Program
             return configuredPath;
         }
 
+        string appDataLaForge = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LaForge");
         string[] candidates =
         {
             Path.GetFullPath(Path.Combine(configDir, "runtime", "emulator", "emulator.exe")),
             Path.GetFullPath(Path.Combine(configDir, "..", "runtime", "emulator", "emulator.exe")),
             Path.GetFullPath(Path.Combine(configDir, "..", "..", "runtime", "emulator", "emulator.exe")),
             Path.GetFullPath(Path.Combine(configDir, "..", "..", "..", "runtime", "emulator", "emulator.exe")),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Android", "Sdk", "emulator", "emulator.exe")
+            Path.Combine(appDataLaForge, "runtime", "emulator", "emulator.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Android", "Sdk", "emulator", "emulator.exe"),
+            @"c:\ag\APKForge\runtime\emulator\emulator.exe"
         };
 
         foreach (string c in candidates)
@@ -647,14 +654,29 @@ public static class Program
             // Always ensure host microphone bridge is active in QEMU for this emulator session
             RunProcessCaptureOutput(adbExe, new[] { "emu", "avd", "hostmicon" }, 2500);
 
+            // Push Master Settings GPS coordinates to the running guest
+            LaForgeMasterSettings.ApplyLocationToGuest(adbExe);
+
             // Execute pre-flight injection / reconciliation for microG Services Core and Vending LVL stub (0x0001 NOT_LICENSED)
             GmsInteropManager.ExecutePreFlightInjection(adbExe, AppContext.BaseDirectory);
+
+            var uninstalledPkgs = LaForgeAppRegistry.GetUninstalledPackages();
+            if (uninstalledPkgs.Count > 0)
+            {
+                string uninstallCmd = string.Join("; ", uninstalledPkgs.Select(p => $"pm uninstall {p} >/dev/null 2>&1"));
+                RunProcessCaptureOutput(adbExe, new[] { "shell", uninstallCmd }, 6000);
+            }
 
             string kioskLockCmd =
                 "wm dismiss-keyguard; " +
                 "cmd statusbar collapse; " +
                 "cmd statusbar send-disable-flag statusbar-expansion home recents notification-peek system-icons clock notification-icons search";
             RunProcessCaptureOutput(adbExe, new[] { "shell", kioskLockCmd }, 4000);
+
+            if (!LaForgeMasterSettings.IsSnapshotCameraMatched(LaForgeMasterSettings.Load()))
+            {
+                RunProcessCaptureOutput(adbExe, new[] { "emu", "avd", "snapshot", "save", "default_boot" }, 25000);
+            }
         }
         catch
         {
@@ -662,35 +684,48 @@ public static class Program
         }
     }
 
+    public static bool IsPackageInstalled(string adbExe, string packageName)
+    {
+        if (string.IsNullOrWhiteSpace(packageName) || !File.Exists(adbExe))
+        {
+            return false;
+        }
+
+        try
+        {
+            string pmOut = RunProcessCaptureOutput(
+                adbExe,
+                new[] { "shell", $"pm path {packageName}" },
+                6000).Trim();
+            return pmOut.Contains("package:", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static void SideloadAndGrantPermissions(string adbExe, string apkPath, string packageName)
     {
-        bool alreadyInstalled = false;
-        if (!string.IsNullOrWhiteSpace(packageName))
-        {
-            try
-            {
-                string pmOut = RunProcessCaptureOutput(
-                    adbExe,
-                    new[] { "shell", $"pm path {packageName}" },
-                    6000).Trim();
-                alreadyInstalled = pmOut.Contains("package:", StringComparison.OrdinalIgnoreCase);
-            }
-            catch
-            {
-                // Ignore
-            }
-        }
+        bool alreadyInstalled = IsPackageInstalled(adbExe, packageName);
 
         if (!alreadyInstalled)
         {
             RunCheckedProcess(adbExe, new[] { "install", "-r", "-g", apkPath });
             try
             {
-                RunProcessCaptureOutput(adbExe, new[] { "shell", "appops", "set", packageName, "MANAGE_EXTERNAL_STORAGE", "allow" }, 4000);
+                string specialGrantsCmd =
+                    $"cmd appops set {packageName} MANAGE_EXTERNAL_STORAGE allow 2>/dev/null; " +
+                    $"cmd appops set {packageName} SYSTEM_ALERT_WINDOW allow 2>/dev/null; " +
+                    $"cmd appops set {packageName} WRITE_SETTINGS allow 2>/dev/null; " +
+                    $"cmd appops set {packageName} SCHEDULE_EXACT_ALARM allow 2>/dev/null; " +
+                    $"cmd appops set {packageName} PROJECT_MEDIA allow 2>/dev/null; " +
+                    $"dumpsys deviceidle whitelist +{packageName} >/dev/null 2>&1";
+                RunProcessCaptureOutput(adbExe, new[] { "shell", specialGrantsCmd }, 5000);
             }
             catch
             {
-                // Ignore if app does not declare MANAGE_EXTERNAL_STORAGE
+                // Ignore if app does not declare special-access ops
             }
         }
     }
@@ -803,16 +838,30 @@ public static class Program
             list.Add("-no-window");
         }
         list.AddRange(new[] { "-gpu", rt.GpuMode });
-        if (!string.IsNullOrWhiteSpace(rt.Snapshot))
-        {
-            list.AddRange(new[] { "-snapshot", rt.Snapshot });
-        }
         if (forExecution)
         {
+            var master = LaForgeMasterSettings.Load();
+            LaForgeMasterSettings.SyncAvdHardwareIni(master, rt.AvdName);
+            if (!string.IsNullOrWhiteSpace(rt.Snapshot) &&
+                LaForgeMasterSettings.IsSnapshotCameraMatched(master, rt.AvdName, rt.Snapshot))
+            {
+                list.AddRange(new[] { "-snapshot", rt.Snapshot });
+            }
+            else
+            {
+                list.Add("-no-snapshot-load");
+            }
             list.AddRange(new[] { "-no-snapshot-save", "-no-boot-anim", "-allow-host-audio" });
+            string rearCam = LaForgeMasterSettings.ExtractCameraToken(master.RearCamera);
+            string frontCam = LaForgeMasterSettings.ExtractCameraToken(master.FrontCamera);
+            list.AddRange(new[] { "-camera-back", rearCam, "-camera-front", frontCam });
         }
         else
         {
+            if (!string.IsNullOrWhiteSpace(rt.Snapshot))
+            {
+                list.AddRange(new[] { "-snapshot", rt.Snapshot });
+            }
             list.AddRange(new[] { "-no-snapshot-save", "-no-boot-anim", "-no-audio" });
         }
         if (rt.Whpx)
@@ -822,13 +871,46 @@ public static class Program
         return list;
     }
 
+    public static void CleanStaleAvdLocks(string avdName = "LaForge_x86_64_API34")
+    {
+        try
+        {
+            if (Process.GetProcessesByName("qemu-system-x86_64-headless").Length > 0)
+            {
+                return;
+            }
+
+            string avdDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".android", "avd", $"{avdName}.avd");
+            if (!Directory.Exists(avdDir))
+            {
+                return;
+            }
+
+            string readSnap = Path.Combine(avdDir, "read-snapshot.txt");
+            if (File.Exists(readSnap)) File.Delete(readSnap);
+
+            string multiLock = Path.Combine(avdDir, "multiinstance.lock");
+            if (File.Exists(multiLock)) File.Delete(multiLock);
+
+            string hwLockDir = Path.Combine(avdDir, "hardware-qemu.ini.lock");
+            if (Directory.Exists(hwLockDir)) Directory.Delete(hwLockDir, recursive: true);
+            else if (File.Exists(hwLockDir)) File.Delete(hwLockDir);
+        }
+        catch
+        {
+            // Ignore lock cleanup errors
+        }
+    }
+
     public static void StopHeadlessEmulator(string? adbExe = null)
     {
         try
         {
             if (!string.IsNullOrWhiteSpace(adbExe) && File.Exists(adbExe))
             {
-                RunProcessCaptureOutput(adbExe, new[] { "emu", "kill" }, 2000);
+                RunProcessCaptureOutput(adbExe, new[] { "emu", "kill" }, 2500);
             }
         }
         catch
@@ -842,9 +924,10 @@ public static class Program
             {
                 try
                 {
-                    if (!proc.HasExited)
+                    if (!proc.HasExited && !proc.WaitForExit(5000))
                     {
                         proc.Kill(entireProcessTree: true);
+                        proc.WaitForExit(1500);
                     }
                 }
                 catch
@@ -857,6 +940,8 @@ public static class Program
         {
             // Ignore
         }
+
+        CleanStaleAvdLocks();
     }
 
     public static void StopEmulatorIfNoActiveSessions(string? adbExe = null, int ignoreScrcpyPid = 0)
@@ -992,6 +1077,10 @@ public static class Program
             if (policy?.BlockHid ?? false)
             {
                 list.Add("--no-control");
+            }
+            else if (LaForgeMasterSettings.Load().GamepadPassthrough)
+            {
+                list.Add("--gamepad=uhid");
             }
         }
 
@@ -1379,12 +1468,30 @@ public static class Program
             Task.WaitAll(new Task[] { outTask, errTask }, 500);
             string partialOut = outTask.IsCompletedSuccessfully ? outTask.Result : "";
             string partialErr = errTask.IsCompletedSuccessfully ? errTask.Result : "";
-            return string.IsNullOrWhiteSpace(partialOut) ? partialErr : partialOut;
+            return CombineStdoutAndStderr(partialOut, partialErr);
         }
         Task.WaitAll(new Task[] { outTask, errTask }, 2000);
         string stdout = outTask.IsCompletedSuccessfully ? outTask.Result : "";
         string stderr = errTask.IsCompletedSuccessfully ? errTask.Result : "";
-        return string.IsNullOrWhiteSpace(stdout) ? stderr : stdout;
+        return CombineStdoutAndStderr(stdout, stderr);
+    }
+
+    private static string CombineStdoutAndStderr(string stdout, string stderr)
+    {
+        if (string.IsNullOrWhiteSpace(stdout))
+        {
+            return stderr;
+        }
+        if (!string.IsNullOrWhiteSpace(stderr) &&
+            (stderr.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
+             stderr.Contains("Failure", StringComparison.OrdinalIgnoreCase) ||
+             stderr.Contains("Exception", StringComparison.OrdinalIgnoreCase) ||
+             stderr.Contains("does not exist", StringComparison.OrdinalIgnoreCase) ||
+             stderr.Contains("Unable to resolve", StringComparison.OrdinalIgnoreCase)))
+        {
+            return $"{stdout.TrimEnd()}\n{stderr}";
+        }
+        return stdout;
     }
 
     public static void RunCheckedProcess(string fileName, IEnumerable<string> args)

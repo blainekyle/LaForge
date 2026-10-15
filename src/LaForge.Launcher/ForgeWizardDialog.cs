@@ -48,6 +48,8 @@ public sealed class ForgeWizardDialog : Form
         BackColor = Color.FromArgb(20, 24, 33);
         ForeColor = Color.White;
         Font = new Font("Segoe UI", 9.5F, FontStyle.Regular);
+        var brandIco = LaForgeSplashOverlay.LoadBrandIcon();
+        if (brandIco != null) Icon = brandIco;
         AllowDrop = true;
         DragEnter += (_, e) =>
         {
@@ -222,6 +224,11 @@ public sealed class ForgeWizardDialog : Form
 
     private static string ResolveDefaultOutputDir(string baseDir)
     {
+        string trimmed = baseDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (Path.GetFileName(trimmed).Equals("dist", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
         string candidate = Path.Combine(baseDir, "dist");
         if (Directory.Exists(candidate)) { return candidate; }
         string cwdDist = Path.Combine(Directory.GetCurrentDirectory(), "dist");
@@ -258,15 +265,30 @@ public sealed class ForgeWizardDialog : Form
             _txtApk.Text = path;
 
             string types = meta.MimeTypes.Count == 0 ? "(none declared)" : string.Join(", ", meta.MimeTypes.Take(6)) + (meta.MimeTypes.Count > 6 ? ", …" : "");
+            string abiSummary = meta.NativeAbis.Count == 0
+                ? "Pure JVM / Kotlin (Universal — x86_64 Ready)"
+                : (meta.IsCompatibleWithX86_64
+                    ? $"{string.Join(", ", meta.NativeAbis)} (x86_64 Ready)"
+                    : $"{string.Join(", ", meta.NativeAbis)} (⚠ ARM-ONLY — no x86_64 slice)");
+
             _lblPreview.Text =
-                $"Package   : {meta.PackageName}\n" +
-                $"Version   : {meta.VersionName} (code {meta.VersionCode})\n" +
+                $"Package   : {meta.PackageName}   (v{meta.VersionName}, code {meta.VersionCode})\n" +
                 $"Launcher  : {meta.LauncherActivity}\n" +
                 $"Window    : {meta.PreferredOrientation}, {(meta.IsWindowable ? "resizable" : "fixed")}, {meta.PreferredScreenSize}\n" +
+                $"Native ABI: {abiSummary}\n" +
                 $"Opens     : {types}\n" +
                 $"Size      : {new FileInfo(path).Length / (1024 * 1024.0):0.0} MB";
-            _lblStatus.Text = "Ready to forge.";
-            _lblStatus.ForeColor = Color.FromArgb(126, 231, 135);
+
+            if (meta.IsCompatibleWithX86_64)
+            {
+                _lblStatus.Text = "Ready to forge.";
+                _lblStatus.ForeColor = Color.FromArgb(126, 231, 135);
+            }
+            else
+            {
+                _lblStatus.Text = $"⚠ Warning: APK has ARM-only native libraries ({string.Join(", ", meta.NativeAbis)}) and will fail with INSTALL_FAILED_NO_MATCHING_ABIS on x86_64.";
+                _lblStatus.ForeColor = Color.FromArgb(255, 180, 80);
+            }
             _btnForge.Enabled = true;
         }
         catch (Exception ex)
@@ -289,6 +311,23 @@ public sealed class ForgeWizardDialog : Form
         {
             MessageBox.Show(this, "Choose an output folder first.", "LaForge", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
+        }
+
+        if (!_meta.IsCompatibleWithX86_64)
+        {
+            var abiConfirm = MessageBox.Show(
+                this,
+                $"This APK only contains ARM native libraries ({string.Join(", ", _meta.NativeAbis)}) and does not include an x86_64 or x86 slice.\n\n" +
+                "Because the guest Android runtime is x86_64 without ARM binary translation (Major Update 1 roadmap), Android will reject installation with INSTALL_FAILED_NO_MATCHING_ABIS.\n\n" +
+                "Forge this bundle anyway?",
+                "ARM-Only Native Libraries Detected",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (abiConfirm != DialogResult.Yes)
+            {
+                return;
+            }
         }
 
         // Mandatory confirmation before any online icon lookup (mirrors the CLI prompt and wording).

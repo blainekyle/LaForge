@@ -18,17 +18,25 @@ public sealed class LaForgeConsoleWindow : Form
     private readonly string _baseDir;
     private readonly string _adbExe;
     private readonly string _scrcpyExe;
+    private readonly string _emulatorExe;
     private readonly FlowLayoutPanel _appsFlowPanel;
     private readonly ListView _notifListView;
     private readonly Label _lblHeaderStats;
     private readonly Label _lblGmsStatus;
     private readonly CheckBox _chkInjectMicroG;
     private readonly CheckBox _chkInjectVending;
+    private readonly TextBox _txtFilter;
+    private readonly ComboBox _cmbSortMode;
+    private readonly Button _btnFilterAll;
+    private readonly Button _btnFilterActive;
+    private readonly Button _btnFilterInactive;
     private readonly NotifyIcon _trayIcon;
     private readonly System.Windows.Forms.Timer _refreshTimer;
 
     private readonly Dictionary<string, AppCardControls> _cardsByPackage = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, AppLiveTelemetry> _lastTelemetry = new(StringComparer.OrdinalIgnoreCase);
     private List<AppPolicyConfig> _apps = new();
+    private string _statusFilterMode = "ALL"; // "ALL", "ACTIVE", "INACTIVE"
     private Process? _headlessAudioBridgeProcess;
     private EventWaitHandle? _consoleActiveEvent;
     private bool _isRefreshing;
@@ -56,6 +64,7 @@ public sealed class LaForgeConsoleWindow : Form
         _baseDir = baseDir;
         _adbExe = Program.ResolveToolPath(baseDir, "bridge/adb.exe", "adb.exe");
         _scrcpyExe = Program.ResolveToolPath(baseDir, "bridge/scrcpy.exe", "scrcpy.exe");
+        _emulatorExe = Program.ResolveEmulatorPath(baseDir, "runtime/emulator/emulator.exe");
 
         try
         {
@@ -76,9 +85,13 @@ public sealed class LaForgeConsoleWindow : Form
         Font = new Font("Segoe UI", 9.5F, FontStyle.Regular);
 
         string consoleIco = Path.Combine(LaForgeAppRegistry.GetConfigDirectory(), "console.ico");
-        string consolePng = Path.Combine(LaForgeAppRegistry.GetConfigDirectory(), "console.png");
-        AppIconGenerator.EnsureAppIcons("com.laforge.console", "LaForge Console", consoleIco, consolePng);
-        if (File.Exists(consoleIco))
+        LaForgeSplashOverlay.SyncBrandIconToPath(consoleIco);
+        var brandIco = LaForgeSplashOverlay.LoadBrandIcon();
+        if (brandIco != null)
+        {
+            Icon = brandIco;
+        }
+        else if (File.Exists(consoleIco))
         {
             Icon = new Icon(consoleIco);
         }
@@ -86,6 +99,12 @@ public sealed class LaForgeConsoleWindow : Form
         // System Tray Service Setup
         var trayMenu = new ContextMenuStrip();
         trayMenu.Items.Add("Show LaForge Console", null, (_, _) => ShowAndActivate());
+        trayMenu.Items.Add("Master Settings…", null, (_, _) =>
+        {
+            ShowAndActivate();
+            using var dlg = new MasterSettingsDialog(_baseDir, _adbExe, _emulatorExe);
+            dlg.ShowDialog(this);
+        });
         trayMenu.Items.Add("Open Shared HOST Folder (%LOCALAPPDATA%\\LaForge\\HOST)", null, (_, _) => OpenFolderInExplorer(HostFolderBridge.ResolveHostDirectory(@"%LOCALAPPDATA%\LaForge\HOST")));
         trayMenu.Items.Add("Open App Config Folder (%LOCALAPPDATA%\\LaForge\\config)", null, (_, _) => OpenFolderInExplorer(LaForgeAppRegistry.GetConfigDirectory()));
         trayMenu.Items.Add(new ToolStripSeparator());
@@ -148,11 +167,12 @@ public sealed class LaForgeConsoleWindow : Form
             }
         };
 
-        var btnOpenConfigDir = CreateButton("📂 /config (.conf)", Color.FromArgb(45, 55, 72));
-        btnOpenConfigDir.Click += (_, _) => OpenFolderInExplorer(LaForgeAppRegistry.GetConfigDirectory());
-
-        var btnOpenHostDir = CreateButton("📂 /HOST Share", Color.FromArgb(35, 90, 135));
-        btnOpenHostDir.Click += (_, _) => OpenFolderInExplorer(HostFolderBridge.ResolveHostDirectory(@"%LOCALAPPDATA%\LaForge\HOST"));
+        var btnMasterSettings = CreateButton("⚙ Master Settings", Color.FromArgb(45, 62, 88));
+        btnMasterSettings.Click += (_, _) =>
+        {
+            using var dlg = new MasterSettingsDialog(_baseDir, _adbExe, _emulatorExe);
+            dlg.ShowDialog(this);
+        };
 
         var btnRefreshNow = CreateButton("⟳ Refresh", Color.FromArgb(35, 134, 54));
         btnRefreshNow.Click += async (_, _) => await RefreshTelemetryAsync();
@@ -161,8 +181,7 @@ public sealed class LaForgeConsoleWindow : Form
         btnExitService.Click += (_, _) => ExitService();
 
         headerActions.Controls.Add(btnForgeNew);
-        headerActions.Controls.Add(btnOpenConfigDir);
-        headerActions.Controls.Add(btnOpenHostDir);
+        headerActions.Controls.Add(btnMasterSettings);
         headerActions.Controls.Add(btnRefreshNow);
         headerActions.Controls.Add(btnExitService);
 
@@ -397,6 +416,110 @@ public sealed class LaForgeConsoleWindow : Form
         notifContainer.Controls.Add(_notifListView);
         notifContainer.Controls.Add(notifHeader);
 
+        // App List Filter & Sort Bar (above _appsFlowPanel)
+        var sortFilterPanel = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 40,
+            BackColor = Color.FromArgb(20, 24, 34),
+            Padding = new Padding(18, 6, 18, 6)
+        };
+
+        var lblFilter = new Label
+        {
+            Text = "🔍 Filter:",
+            Font = new Font("Segoe UI Semibold", 8.75F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(165, 185, 210),
+            Location = new Point(20, 10),
+            AutoSize = true
+        };
+
+        _txtFilter = new TextBox
+        {
+            Location = new Point(82, 7),
+            Size = new Size(195, 24),
+            BackColor = Color.FromArgb(13, 16, 23),
+            ForeColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle,
+            Font = new Font("Segoe UI", 9F, FontStyle.Regular),
+            PlaceholderText = "App name or package…"
+        };
+        _txtFilter.TextChanged += (_, _) => ApplySortAndFilter();
+
+        var btnClearFilter = new Button
+        {
+            Text = "✕",
+            Location = new Point(280, 7),
+            Size = new Size(24, 24),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(35, 42, 55),
+            ForeColor = Color.FromArgb(180, 190, 205),
+            Font = new Font("Segoe UI", 8F, FontStyle.Bold),
+            Cursor = Cursors.Hand
+        };
+        btnClearFilter.FlatAppearance.BorderSize = 0;
+        btnClearFilter.Click += (_, _) => _txtFilter.Text = "";
+
+        Button MakeFilterPill(string text, string mode, int x, int w)
+        {
+            var b = new Button
+            {
+                Text = text,
+                Location = new Point(x, 7),
+                Size = new Size(w, 24),
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI Semibold", 8.25F, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            b.FlatAppearance.BorderSize = 0;
+            b.Click += (_, _) =>
+            {
+                _statusFilterMode = mode;
+                UpdateFilterPillStyles();
+                ApplySortAndFilter();
+            };
+            return b;
+        }
+
+        _btnFilterAll = MakeFilterPill("All Apps", "ALL", 316, 72);
+        _btnFilterActive = MakeFilterPill("● Active", "ACTIVE", 392, 74);
+        _btnFilterInactive = MakeFilterPill("○ Inactive", "INACTIVE", 470, 80);
+        UpdateFilterPillStyles();
+
+        var lblSort = new Label
+        {
+            Text = "Sort Order:",
+            Font = new Font("Segoe UI Semibold", 8.75F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(165, 185, 210),
+            Location = new Point(568, 10),
+            AutoSize = true
+        };
+
+        _cmbSortMode = new ComboBox
+        {
+            Location = new Point(642, 7),
+            Size = new Size(370, 24),
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            BackColor = Color.FromArgb(13, 16, 23),
+            ForeColor = Color.FromArgb(220, 232, 248),
+            Font = new Font("Segoe UI Semibold", 8.75F, FontStyle.Regular)
+        };
+        _cmbSortMode.Items.Add("Activity Priority (Focused → Foreground → Background → Inactive)");
+        _cmbSortMode.Items.Add("App Name (A–Z)");
+        _cmbSortMode.Items.Add("App Name (Z–A)");
+        _cmbSortMode.Items.Add("Recently Launched");
+        _cmbSortMode.SelectedIndex = 0;
+        _cmbSortMode.SelectedIndexChanged += (_, _) => ApplySortAndFilter();
+
+        sortFilterPanel.Controls.Add(lblFilter);
+        sortFilterPanel.Controls.Add(_txtFilter);
+        sortFilterPanel.Controls.Add(btnClearFilter);
+        sortFilterPanel.Controls.Add(_btnFilterAll);
+        sortFilterPanel.Controls.Add(_btnFilterActive);
+        sortFilterPanel.Controls.Add(_btnFilterInactive);
+        sortFilterPanel.Controls.Add(lblSort);
+        sortFilterPanel.Controls.Add(_cmbSortMode);
+
         // Center Remembered Apps Grid / List
         _appsFlowPanel = new FlowLayoutPanel
         {
@@ -404,11 +527,12 @@ public sealed class LaForgeConsoleWindow : Form
             AutoScroll = true,
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
-            Padding = new Padding(18, 14, 18, 14),
+            Padding = new Padding(18, 12, 18, 14),
             BackColor = Color.FromArgb(15, 17, 23)
         };
 
         Controls.Add(_appsFlowPanel);
+        Controls.Add(sortFilterPanel);
         Controls.Add(notifContainer);
         Controls.Add(gmsPanel);
         Controls.Add(headerPanel);
@@ -476,6 +600,18 @@ public sealed class LaForgeConsoleWindow : Form
         };
     }
 
+    private void UpdateFilterPillStyles()
+    {
+        void StylePill(Button b, bool active)
+        {
+            b.BackColor = active ? Color.FromArgb(45, 95, 155) : Color.FromArgb(30, 36, 48);
+            b.ForeColor = active ? Color.White : Color.FromArgb(165, 175, 195);
+        }
+        StylePill(_btnFilterAll, _statusFilterMode == "ALL");
+        StylePill(_btnFilterActive, _statusFilterMode == "ACTIVE");
+        StylePill(_btnFilterInactive, _statusFilterMode == "INACTIVE");
+    }
+
     private void RebuildAppCards()
     {
         _apps = LaForgeAppRegistry.DiscoverRememberedApps(_baseDir);
@@ -490,7 +626,117 @@ public sealed class LaForgeConsoleWindow : Form
             _appsFlowPanel.Controls.Add(card.CardPanel);
         }
 
+        ApplySortAndFilter();
         _appsFlowPanel.ResumeLayout();
+    }
+
+    private void ApplySortAndFilter()
+    {
+        if (_apps.Count == 0 || _cardsByPackage.Count == 0) return;
+
+        string query = (_txtFilter?.Text ?? "").Trim();
+        int sortIdx = _cmbSortMode?.SelectedIndex ?? 0;
+
+        int GetActivityTier(AppPolicyConfig app)
+        {
+            if (!_lastTelemetry.TryGetValue(app.PackageName, out var tel))
+            {
+                return 3; // Inactive
+            }
+            if (tel.IsRunningOnDisplay && tel.IsScrcpyWindowFocused)
+            {
+                return 0; // 1st: Currently in focus
+            }
+            if (tel.IsRunningOnDisplay)
+            {
+                return 1; // 2nd: Running in foreground (not focused)
+            }
+            if (tel.IsBackgrounded)
+            {
+                return 2; // 3rd: Running in background
+            }
+            return 3; // 4th: Inactive / stopped
+        }
+
+        string GetDisplayName(AppPolicyConfig a) => LaForgeAppRegistry.StripLaForgePrefix(a.AppTitle, a.PackageName);
+
+        IEnumerable<AppPolicyConfig> ordered = sortIdx switch
+        {
+            1 => _apps.OrderBy(GetDisplayName, StringComparer.OrdinalIgnoreCase),
+            2 => _apps.OrderByDescending(GetDisplayName, StringComparer.OrdinalIgnoreCase),
+            3 => _apps.OrderByDescending(a => a.LastLaunchedUtc ?? "", StringComparer.OrdinalIgnoreCase)
+                      .ThenBy(GetDisplayName, StringComparer.OrdinalIgnoreCase),
+            _ => _apps.OrderBy(GetActivityTier)
+                      .ThenBy(GetDisplayName, StringComparer.OrdinalIgnoreCase)
+        };
+
+        var orderedList = ordered.ToList();
+        bool anyOrderOrVisChanged = false;
+
+        for (int i = 0; i < orderedList.Count; i++)
+        {
+            var app = orderedList[i];
+            if (!_cardsByPackage.TryGetValue(app.PackageName, out var card)) continue;
+
+            string displayName = GetDisplayName(app);
+            bool matchesText = string.IsNullOrEmpty(query) ||
+                               displayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                               app.PackageName.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+            int tier = GetActivityTier(app);
+            bool matchesStatus = _statusFilterMode switch
+            {
+                "ACTIVE" => tier < 3,
+                "INACTIVE" => tier == 3,
+                _ => true
+            };
+
+            bool shouldBeVisible = matchesText && matchesStatus;
+            if (card.CardPanel.Visible != shouldBeVisible)
+            {
+                anyOrderOrVisChanged = true;
+            }
+            if (_appsFlowPanel.Controls.GetChildIndex(card.CardPanel, false) != i)
+            {
+                anyOrderOrVisChanged = true;
+            }
+        }
+
+        if (!anyOrderOrVisChanged) return;
+
+        _appsFlowPanel.SuspendLayout();
+        try
+        {
+            for (int i = 0; i < orderedList.Count; i++)
+            {
+                var app = orderedList[i];
+                if (!_cardsByPackage.TryGetValue(app.PackageName, out var card)) continue;
+
+                string displayName = GetDisplayName(app);
+                bool matchesText = string.IsNullOrEmpty(query) ||
+                                   displayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                                   app.PackageName.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+                int tier = GetActivityTier(app);
+                bool matchesStatus = _statusFilterMode switch
+                {
+                    "ACTIVE" => tier < 3,
+                    "INACTIVE" => tier == 3,
+                    _ => true
+                };
+
+                bool shouldBeVisible = matchesText && matchesStatus;
+                if (card.CardPanel.Visible != shouldBeVisible)
+                {
+                    card.CardPanel.Visible = shouldBeVisible;
+                }
+                _appsFlowPanel.Controls.SetChildIndex(card.CardPanel, i);
+            }
+        }
+        finally
+        {
+            _appsFlowPanel.ResumeLayout();
+        }
     }
 
     private AppCardControls CreateAppCard(AppPolicyConfig app)
@@ -515,7 +761,7 @@ public sealed class LaForgeConsoleWindow : Form
 
         var lblTitle = new Label
         {
-            Text = string.IsNullOrWhiteSpace(app.AppTitle) ? app.PackageName : app.AppTitle,
+            Text = LaForgeAppRegistry.StripLaForgePrefix(app.AppTitle, app.PackageName),
             Font = new Font("Segoe UI Semibold", 12F, FontStyle.Bold),
             ForeColor = Color.White,
             AutoSize = true,
@@ -553,12 +799,6 @@ public sealed class LaForgeConsoleWindow : Form
         var btnStop = CreateButton("■", Color.FromArgb(135, 48, 52), new Point(929, 22), new Size(28, 36));
         btnStop.Click += async (_, _) => await StopAppAsync(app.PackageName);
 
-        var btnIcon = CreateButton("🖼", Color.FromArgb(62, 70, 86), new Point(48, 48), new Size(22, 22));
-        btnIcon.Font = new Font("Segoe UI Emoji", 8F);
-        btnIcon.Padding = Padding.Empty;
-        new ToolTip().SetToolTip(btnIcon, "Change this app's icon (choose an image file)");
-        btnIcon.Click += (_, _) => ChangeAppIcon(app, iconBox);
-
         var btnGear = CreateButton("⚙", Color.FromArgb(62, 70, 86), new Point(961, 22), new Size(28, 36));
         btnGear.Click += async (_, _) => await OpenAppConfigModalAsync(app.PackageName);
 
@@ -573,8 +813,6 @@ public sealed class LaForgeConsoleWindow : Form
         panel.Controls.Add(btnBg);
         panel.Controls.Add(btnStop);
         panel.Controls.Add(btnGear);
-        panel.Controls.Add(btnIcon);
-        btnIcon.BringToFront();
 
         return new AppCardControls
         {
@@ -612,6 +850,7 @@ public sealed class LaForgeConsoleWindow : Form
             await Task.WhenAll(telemetryTask, gmsStatusTask);
 
             var telemetry = telemetryTask.Result;
+            _lastTelemetry = telemetry;
             var (gmsCfg, gmsStatus) = gmsStatusTask.Result;
 
             if (IsDisposed) return;
@@ -661,6 +900,7 @@ public sealed class LaForgeConsoleWindow : Form
                 if (!_cardsByPackage.TryGetValue(app.PackageName, out var card)) continue;
                 if (!telemetry.TryGetValue(app.PackageName, out var tel)) continue;
 
+                card.TitleLabel.Text = LaForgeAppRegistry.StripLaForgePrefix(app.AppTitle, app.PackageName);
                 card.PolicyBadge.Text = FormatPolicySummary(app);
 
                 if (tel.ScrcpyProcessId > 0)
@@ -673,9 +913,18 @@ public sealed class LaForgeConsoleWindow : Form
                 {
                     runningCount++;
                     string vdText = tel.VirtualDisplayId > 0 ? $"Display #{tel.VirtualDisplayId}" : $"PID {tel.ScrcpyProcessId}";
-                    card.StatusBadge.Text = $"● RUNNING ({vdText})";
-                    card.StatusBadge.BackColor = Color.FromArgb(22, 68, 42);
-                    card.StatusBadge.ForeColor = Color.FromArgb(126, 231, 135);
+                    if (tel.IsScrcpyWindowFocused)
+                    {
+                        card.StatusBadge.Text = $"★ IN FOCUS ({vdText})";
+                        card.StatusBadge.BackColor = Color.FromArgb(20, 82, 65);
+                        card.StatusBadge.ForeColor = Color.FromArgb(110, 250, 190);
+                    }
+                    else
+                    {
+                        card.StatusBadge.Text = $"● RUNNING ({vdText})";
+                        card.StatusBadge.BackColor = Color.FromArgb(22, 68, 42);
+                        card.StatusBadge.ForeColor = Color.FromArgb(126, 231, 135);
+                    }
                     card.BtnLaunchFocus.Text = tel.ScrcpyProcessId > 0 ? "🎯 Focus Window" : "▶ Attach Display";
                     card.BtnBackground.Enabled = tel.ScrcpyProcessId > 0;
                     card.BtnStop.Enabled = true;
@@ -743,6 +992,8 @@ public sealed class LaForgeConsoleWindow : Form
 
                 allNotifs.AddRange(tel.Notifications);
             }
+
+            ApplySortAndFilter();
 
             // Maintain headless audio bridge when a backgrounded app is playing audio and no scrcpy process is running
             if (anyBackgroundPlayingAudio && !anyVisualScrcpyOpen)
@@ -1110,14 +1361,45 @@ public sealed class LaForgeConsoleWindow : Form
         pnlWindowing.Controls.Add(chkDynamicResize);
         pnlWindowing.Controls.Add(lblDynamicHint);
 
-        var btnOpenConfFile = CreateButton("Open .conf in Notepad", Color.FromArgb(50, 58, 75), new Point(20, 520), new Size(185, 38));
+        var btnChangeIcon = CreateButton("🖼 Change Icon…", Color.FromArgb(62, 74, 98), new Point(20, 520), new Size(134, 38));
+        btnChangeIcon.Click += (_, _) =>
+        {
+            _cardsByPackage.TryGetValue(policy.PackageName, out var cardCtrl);
+            ChangeAppIcon(policy, cardCtrl?.IconBox, dlg);
+        };
+
+        var btnOpenConfFile = CreateButton("📄 Edit .conf", Color.FromArgb(50, 58, 75), new Point(162, 520), new Size(122, 38));
         btnOpenConfFile.Click += (_, _) =>
         {
             LaForgeAppRegistry.Save(policy);
             Process.Start(new ProcessStartInfo { FileName = "notepad.exe", Arguments = $"\"{confPath}\"", UseShellExecute = true });
         };
 
-        var btnSave = CreateButton("Save && Apply Live", Color.FromArgb(35, 134, 54), new Point(399, 520), new Size(185, 38));
+        bool uninstalled = false;
+        var btnUninstall = CreateButton("🗑 Uninstall…", Color.FromArgb(150, 42, 46), new Point(292, 520), new Size(132, 38));
+        btnUninstall.Click += (_, _) =>
+        {
+            string displayTitle = LaForgeAppRegistry.StripLaForgePrefix(policy.AppTitle, policy.PackageName);
+            var confirm = MessageBox.Show(
+                dlg,
+                $"Uninstall {displayTitle} ({policy.PackageName})?\n\n" +
+                "• Silently uninstalls the package from the shared Android system\n" +
+                "• Removes its forged bundle folder and LaForge configuration",
+                "Confirm App Uninstall",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (confirm != DialogResult.Yes)
+            {
+                return;
+            }
+
+            uninstalled = true;
+            dlg.DialogResult = DialogResult.Abort;
+            dlg.Close();
+        };
+
+        var btnSave = CreateButton("Save && Apply Live", Color.FromArgb(35, 134, 54), new Point(432, 520), new Size(152, 38));
         btnSave.Click += (_, _) =>
         {
             string rawOverride = txtCustomSize.Text.Trim();
@@ -1193,10 +1475,26 @@ public sealed class LaForgeConsoleWindow : Form
         dlg.Controls.Add(chkHid);
         dlg.Controls.Add(chkHost);
         dlg.Controls.Add(pnlWindowing);
+        dlg.Controls.Add(btnChangeIcon);
         dlg.Controls.Add(btnOpenConfFile);
+        dlg.Controls.Add(btnUninstall);
         dlg.Controls.Add(btnSave);
 
-        if (dlg.ShowDialog(this) == DialogResult.OK)
+        var result = dlg.ShowDialog(this);
+        if (uninstalled)
+        {
+            if (_cardsByPackage.TryGetValue(policy.PackageName, out var oldCard))
+            {
+                var prevImg = oldCard.IconBox.Image;
+                oldCard.IconBox.Image = null;
+                prevImg?.Dispose();
+            }
+
+            await Task.Run(() => LaForgeAppRegistry.UninstallApp(policy, _adbExe, _baseDir));
+            RebuildAppCards();
+            await RefreshTelemetryAsync();
+        }
+        else if (result == DialogResult.OK)
         {
             await Task.Run(() => LaForgeAppRegistry.EnforcePoliciesOnGuest(_adbExe, policy, forceNetworkUpdate: true));
             await RefreshTelemetryAsync();
@@ -1241,31 +1539,35 @@ public sealed class LaForgeConsoleWindow : Form
     }
 
     /// <summary>Lets the user pick any image as this bundle's icon; it is stored as a "custom" icon that rebuilds never overwrite.</summary>
-    private void ChangeAppIcon(AppPolicyConfig app, PictureBox iconBox)
+    private void ChangeAppIcon(AppPolicyConfig app, PictureBox? iconBox, IWin32Window? owner = null)
     {
+        IWin32Window dialogOwner = owner ?? this;
         if (string.IsNullOrWhiteSpace(app.BundleDir) || !Directory.Exists(app.BundleDir))
         {
-            MessageBox.Show(this, "This app's bundle folder could not be found, so its icon cannot be changed.", "LaForge", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(dialogOwner, "This app's bundle folder could not be found, so its icon cannot be changed.", "LaForge", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
         using var dlg = new OpenFileDialog
         {
-            Title = $"Choose an icon for {(string.IsNullOrWhiteSpace(app.AppTitle) ? app.PackageName : app.AppTitle)}",
+            Title = $"Choose an icon for {LaForgeAppRegistry.StripLaForgePrefix(app.AppTitle, app.PackageName)}",
             Filter = "Images (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.ico;*.webp)|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.ico;*.webp|All files (*.*)|*.*",
             CheckFileExists = true
         };
-        if (dlg.ShowDialog(this) != DialogResult.OK) { return; }
+        if (dlg.ShowDialog(dialogOwner) != DialogResult.OK) { return; }
 
         try
         {
             AppIconGenerator.ApplyCustomIcon(app.BundleDir, dlg.FileName);
-            LoadCardIcon(iconBox, app);
-            MessageBox.Show(this, "Icon updated. A window that is already open keeps its old icon until the app is relaunched.", "LaForge", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (iconBox != null)
+            {
+                LoadCardIcon(iconBox, app);
+            }
+            MessageBox.Show(dialogOwner, "Icon updated. A window that is already open keeps its old icon until the app is relaunched.", "LaForge", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"Could not use that image: {ex.Message}", "LaForge", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(dialogOwner, $"Could not use that image: {ex.Message}", "LaForge", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 

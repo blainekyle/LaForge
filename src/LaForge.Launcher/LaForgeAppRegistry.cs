@@ -92,6 +92,7 @@ public sealed class AppLiveTelemetry
     public int ScrcpyProcessId { get; set; }
     public IntPtr ScrcpyWindowHandle { get; set; }
     public bool IsScrcpyWindowVisible { get; set; }
+    public bool IsScrcpyWindowFocused { get; set; }
     public bool IsPlayingAudio { get; set; }
     public bool IsRecordingAudio { get; set; }
     public List<AppNotificationItem> Notifications { get; set; } = new();
@@ -114,13 +115,23 @@ public sealed class AppLiveTelemetry
 /// </summary>
 public static class LaForgeAppRegistry
 {
-    public static string GetFriendlyAppName(string? rawTitle, string? packageName = null)
+    public static string StripLaForgePrefix(string? rawTitle, string? fallbackPackageName = null)
     {
-        string name = rawTitle ?? "";
+        string name = (rawTitle ?? "").Trim();
         if (name.StartsWith("LaForge - ", StringComparison.OrdinalIgnoreCase))
         {
             name = name["LaForge - ".Length..].Trim();
         }
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = fallbackPackageName ?? "Application";
+        }
+        return name;
+    }
+
+    public static string GetFriendlyAppName(string? rawTitle, string? packageName = null)
+    {
+        string name = StripLaForgePrefix(rawTitle, packageName);
         int parenIdx = name.IndexOf(" (v", StringComparison.OrdinalIgnoreCase);
         if (parenIdx > 0)
         {
@@ -154,6 +165,9 @@ public static class LaForgeAppRegistry
 
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
@@ -555,8 +569,180 @@ public static class LaForgeAppRegistry
         return policy;
     }
 
+    public static string GetUninstalledPackagesFilePath()
+    {
+        return Path.Combine(GetConfigDirectory(), "uninstalled_packages.txt");
+    }
+
+    public static HashSet<string> GetUninstalledPackages()
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            string path = GetUninstalledPackagesFilePath();
+            if (File.Exists(path))
+            {
+                foreach (string line in File.ReadAllLines(path))
+                {
+                    string trimmed = line.Trim();
+                    if (!string.IsNullOrEmpty(trimmed) && !trimmed.StartsWith('#'))
+                    {
+                        set.Add(trimmed);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore read errors
+        }
+        return set;
+    }
+
+    public static void MarkPackageUninstalled(string packageName)
+    {
+        if (string.IsNullOrWhiteSpace(packageName)) return;
+        try
+        {
+            var set = GetUninstalledPackages();
+            if (set.Add(packageName.Trim()))
+            {
+                File.WriteAllLines(GetUninstalledPackagesFilePath(), set.OrderBy(s => s, StringComparer.OrdinalIgnoreCase));
+            }
+        }
+        catch
+        {
+            // Ignore write errors
+        }
+    }
+
+    public static void ClearPackageUninstalled(string packageName)
+    {
+        if (string.IsNullOrWhiteSpace(packageName)) return;
+        try
+        {
+            var set = GetUninstalledPackages();
+            if (set.Remove(packageName.Trim()))
+            {
+                File.WriteAllLines(GetUninstalledPackagesFilePath(), set.OrderBy(s => s, StringComparer.OrdinalIgnoreCase));
+            }
+        }
+        catch
+        {
+            // Ignore write errors
+        }
+    }
+
+    /// <summary>
+    /// Stops any active window/process for the app, silently uninstalls the package from the shared Android runtime,
+    /// and deletes its forged bundle directory and .conf file.
+    /// </summary>
+    public static void UninstallApp(AppPolicyConfig policy, string? adbExe, string? workspaceRoot = null)
+    {
+        string pkg = policy.PackageName?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(pkg)) return;
+
+        MarkPackageUninstalled(pkg);
+
+        // 1. Kill any active scrcpy window for this app
+        try
+        {
+            var win = FindAppScrcpyWindow(policy);
+            if (win != null && win.ProcessId > 0)
+            {
+                using var proc = Process.GetProcessById(win.ProcessId);
+                proc.Kill(entireProcessTree: true);
+                proc.WaitForExit(1500);
+            }
+        }
+        catch { }
+
+        // 2. Kill any running standalone wrapper EXE for this bundle (excluding LaForgeConsole)
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(policy.ExecutablePath))
+            {
+                string exeName = Path.GetFileNameWithoutExtension(policy.ExecutablePath);
+                if (!string.IsNullOrWhiteSpace(exeName) &&
+                    !exeName.Equals("LaForgeConsole", StringComparison.OrdinalIgnoreCase) &&
+                    !exeName.Equals("launcher", StringComparison.OrdinalIgnoreCase))
+                {
+                    foreach (var p in Process.GetProcessesByName(exeName))
+                    {
+                        try
+                        {
+                            p.Kill(entireProcessTree: true);
+                            p.WaitForExit(1500);
+                        }
+                        catch { }
+                    }
+                }
+            }
+        }
+        catch { }
+
+        // 3. Silently uninstall from the shared Android runtime if currently online
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(adbExe) && File.Exists(adbExe) &&
+                !string.IsNullOrEmpty(Program.GetConnectedAdbDevice(adbExe)))
+            {
+                Program.RunProcessCaptureOutput(adbExe, new[] { "shell", "am", "force-stop", pkg }, 4000);
+                Program.RunProcessCaptureOutput(adbExe, new[] { "uninstall", pkg }, 12000);
+                Program.RunProcessCaptureOutput(adbExe, new[] { "shell", $"pm uninstall --user 0 {pkg} 2>/dev/null" }, 5000);
+            }
+        }
+        catch
+        {
+            // Silent fallback: ConfigureGuestDisplay will also enforce uninstall on next boot via GetUninstalledPackages()
+        }
+
+        // 4. Delete .conf file
+        try
+        {
+            string confFile = GetConfFilePath(pkg);
+            if (File.Exists(confFile))
+            {
+                File.Delete(confFile);
+            }
+        }
+        catch { }
+
+        // 5. Delete bundle directory (with brief retries if a process handle is just closing)
+        var dirsToDelete = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(policy.BundleDir))
+        {
+            dirsToDelete.Add(Path.GetFullPath(policy.BundleDir));
+        }
+        if (!string.IsNullOrWhiteSpace(workspaceRoot))
+        {
+            dirsToDelete.Add(Path.GetFullPath(Path.Combine(workspaceRoot, "dist", pkg)));
+        }
+        dirsToDelete.Add(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "dist", pkg)));
+        dirsToDelete.Add(Path.GetFullPath(Path.Combine(@"c:\ag\APKForge\dist", pkg)));
+
+        foreach (string dir in dirsToDelete)
+        {
+            if (!Directory.Exists(dir)) continue;
+            for (int attempt = 0; attempt < 4; attempt++)
+            {
+                try
+                {
+                    Directory.Delete(dir, recursive: true);
+                    break;
+                }
+                catch
+                {
+                    Thread.Sleep(250);
+                }
+            }
+        }
+    }
+
     public static List<AppPolicyConfig> DiscoverRememberedApps(string? workspaceRoot = null)
     {
+        var uninstalledSet = GetUninstalledPackages();
+
         // Auto-seed any bundles found in dist/ so newly forged bundles appear right away
         try
         {
@@ -567,6 +753,7 @@ public static class LaForgeAppRegistry
             }
             candidateDistDirs.Add(Path.Combine(AppContext.BaseDirectory, "dist"));
             candidateDistDirs.Add(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "dist")));
+            candidateDistDirs.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LaForge", "dist"));
             candidateDistDirs.Add(@"c:\ag\APKForge\dist");
 
             var jsonOpts = new System.Text.Json.JsonSerializerOptions
@@ -587,7 +774,8 @@ public static class LaForgeAppRegistry
                         var cfg = System.Text.Json.JsonSerializer.Deserialize<LaForgeConfig>(File.ReadAllText(cfgFile), jsonOpts);
                         if (cfg != null &&
                             !string.IsNullOrWhiteSpace(cfg.App.PackageName) &&
-                            !GmsInteropManager.IsExcludedInteropPackage(cfg.App.PackageName))
+                            !GmsInteropManager.IsExcludedInteropPackage(cfg.App.PackageName) &&
+                            !uninstalledSet.Contains(cfg.App.PackageName))
                         {
                             LoadOrCreate(cfg, subDir);
                         }
@@ -610,7 +798,10 @@ public static class LaForgeAppRegistry
         {
             try
             {
-                if (Path.GetFileName(file).Equals("gms_interop.conf", StringComparison.OrdinalIgnoreCase))
+                string fileName = Path.GetFileName(file);
+                if (fileName.Equals("gms_interop.conf", StringComparison.OrdinalIgnoreCase) ||
+                    fileName.Equals("icon_sources.conf", StringComparison.OrdinalIgnoreCase) ||
+                    fileName.Equals("master_settings.conf", StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -618,7 +809,8 @@ public static class LaForgeAppRegistry
                 var p = ParseConfFile(file);
                 if (string.IsNullOrWhiteSpace(p.PackageName) ||
                     p.PackageName.Equals("com.example.placeholder", StringComparison.OrdinalIgnoreCase) ||
-                    GmsInteropManager.IsExcludedInteropPackage(p.PackageName))
+                    GmsInteropManager.IsExcludedInteropPackage(p.PackageName) ||
+                    uninstalledSet.Contains(p.PackageName))
                 {
                     continue;
                 }
@@ -642,7 +834,7 @@ public static class LaForgeAppRegistry
             }
         }
 
-        return list.OrderBy(a => a.AppTitle, StringComparer.OrdinalIgnoreCase).ToList();
+        return list.OrderBy(a => StripLaForgePrefix(a.AppTitle, a.PackageName), StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     public const string ConsoleServiceEventName = @"Local\LaForge_ConsoleServiceActiveEvent";
@@ -774,6 +966,7 @@ public static class LaForgeAppRegistry
         // 1. Inspect local Windows scrcpy windows (both visible and hidden/backgrounded via SW_HIDE)
         try
         {
+            IntPtr fgHwnd = GetForegroundWindow();
             var allWindows = FindAllScrcpyWindows();
             foreach (var app in apps)
             {
@@ -784,6 +977,7 @@ public static class LaForgeAppRegistry
                     tel.ScrcpyProcessId = win.ProcessId;
                     tel.ScrcpyWindowHandle = win.Hwnd;
                     tel.IsScrcpyWindowVisible = win.IsVisible;
+                    tel.IsScrcpyWindowFocused = win.IsVisible && win.Hwnd != IntPtr.Zero && win.Hwnd == fgHwnd;
                 }
             }
         }
@@ -986,7 +1180,8 @@ public static class LaForgeAppRegistry
                 result.TryGetValue(currentPkg, out var tel) &&
                 (!string.IsNullOrWhiteSpace(currentTitle) || !string.IsNullOrWhiteSpace(currentText)))
             {
-                string appTitle = apps.FirstOrDefault(a => a.PackageName.Equals(currentPkg, StringComparison.OrdinalIgnoreCase))?.AppTitle ?? currentPkg;
+                string rawTitle = apps.FirstOrDefault(a => a.PackageName.Equals(currentPkg, StringComparison.OrdinalIgnoreCase))?.AppTitle ?? currentPkg;
+                string appTitle = StripLaForgePrefix(rawTitle, currentPkg);
                 // Avoid duplicate notification entries from summary/group lines
                 if (!tel.Notifications.Any(n => n.Title == currentTitle && n.Text == currentText))
                 {

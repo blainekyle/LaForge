@@ -17,6 +17,11 @@ public sealed class ApkMetadata
     public bool IsWindowable { get; set; } = true; // true if resizeableActivity=true / supports arbitrary multi-window aspect ratios
     public string PreferredScreenSize { get; set; } = "1280x720";
     public List<string> SupportedScreenSizes { get; set; } = new();
+    public List<string> NativeAbis { get; set; } = new();
+    public bool IsCompatibleWithX86_64 =>
+        NativeAbis.Count == 0 ||
+        NativeAbis.Any(a => a.Equals("x86_64", StringComparison.OrdinalIgnoreCase) ||
+                            a.Equals("x86", StringComparison.OrdinalIgnoreCase));
 }
 
 /// <summary>
@@ -48,7 +53,23 @@ public static class ApkManifestParser
         stream.CopyTo(ms);
         byte[] data = ms.ToArray();
 
-        return ParseManifestBytes(data, fullPath);
+        var meta = ParseManifestBytes(data, fullPath);
+        var abis = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in archive.Entries)
+        {
+            string entryPath = entry.FullName.Replace('\\', '/');
+            if (entryPath.StartsWith("lib/", StringComparison.OrdinalIgnoreCase) &&
+                entryPath.EndsWith(".so", StringComparison.OrdinalIgnoreCase))
+            {
+                string[] parts = entryPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 3 && !string.IsNullOrWhiteSpace(parts[1]))
+                {
+                    abis.Add(parts[1].Trim());
+                }
+            }
+        }
+        meta.NativeAbis.AddRange(abis.OrderBy(a => a, StringComparer.OrdinalIgnoreCase));
+        return meta;
     }
 
     private static ApkMetadata ParseManifestBytes(byte[] bytes, string apkPath)

@@ -165,6 +165,7 @@ public static class GmsInteropManager
         {
             baseDir ?? AppContext.BaseDirectory,
             AppContext.BaseDirectory,
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LaForge"),
             @"c:\ag\APKForge"
         };
 
@@ -357,6 +358,10 @@ public static class GmsInteropManager
                     2500).Trim();
                 if (doneProp == "1")
                 {
+                    Program.RunProcessCaptureOutput(
+                        adbExe,
+                        new[] { "shell", "dumpsys deviceidle whitelist +com.google.android.gms 2>/dev/null; dumpsys deviceidle whitelist +com.mgoogle.android.gms 2>/dev/null" },
+                        2500);
                     return;
                 }
             }
@@ -412,7 +417,7 @@ public static class GmsInteropManager
                     4000);
 
                 // GsfProxy (com.google.android.gsf) is required by microG's self-test.
-                string gsfApk = Path.Combine(Path.GetDirectoryName(microGApk) ?? baseDir, "gsf-proxy.apk");
+                string gsfApk = Path.Combine(Path.GetDirectoryName(microGApk) ?? baseDir ?? AppContext.BaseDirectory, "gsf-proxy.apk");
                 string gsfInstalled = Program.RunProcessCaptureOutput(
                     adbExe,
                     new[] { "shell", "pm path com.google.android.gsf 2>/dev/null" },

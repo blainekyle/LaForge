@@ -59,8 +59,8 @@ public sealed class LaForgeWindow : Form
             ShowInTaskbar = false;
         }
 
-        // Load bespoke app.ico if present
-        Icon? appIcon = TryLoadAppIcon(configDir, config.App.IconPath);
+        // Load bespoke app.ico if present, falling back to the LaForge brand icon
+        Icon? appIcon = TryLoadAppIcon(configDir, config.App.IconPath) ?? LaForgeSplashOverlay.LoadBrandIcon();
         if (appIcon != null)
         {
             Icon = appIcon;
@@ -503,6 +503,7 @@ public sealed class LaForgeWindow : Form
 
                 await Task.Run(() =>
                 {
+                    Program.CleanStaleAvdLocks(_config.Runtime.AvdName);
                     Program.StartBackgroundProcess(emulatorExe, emuArgs, hidden: true, emuEnv);
                     Program.WaitForDeviceBoot(adbExe, _config.Runtime.BootTimeoutSec);
                 });
@@ -527,9 +528,10 @@ public sealed class LaForgeWindow : Form
                     LaForgeAppRegistry.EnforcePoliciesOnGuest(adbExe, appPolicy, msg => AppendLog(msg, Color.FromArgb(210, 168, 255)));
                 });
 
-                if (!appPolicy.VirtualDisplay || !scrcpyReady)
+                if (payloadReady)
                 {
-                    if (payloadReady)
+                    bool isInstalled = await Task.Run(() => Program.IsPackageInstalled(adbExe, _config.App.PackageName));
+                    if (!isInstalled)
                     {
                         _splashOverlay?.UpdateStatus(
                             $"Preparing {friendlyName} for initial launch...",
@@ -537,6 +539,10 @@ public sealed class LaForgeWindow : Form
                         AppendLog($"Sideloading {Path.GetFileName(payloadApk)} via 'adb install -r -g'...");
                         await Task.Run(() => Program.SideloadAndGrantPermissions(adbExe, payloadApk, _config.App.PackageName));
                     }
+                }
+
+                if (!appPolicy.VirtualDisplay || !scrcpyReady)
+                {
                     _splashOverlay?.UpdateStatus($"Loading {friendlyName}...", "Starting application activity...");
                     AppendLog($"Starting {_config.App.PackageName}/{_config.App.ActivityName} on primary display...");
                     string startResult = await Task.Run(() => Program.LaunchApkWithRetry(adbExe, _config.App, 15));
@@ -662,6 +668,9 @@ public sealed class LaForgeWindow : Form
         catch (Exception ex)
         {
             _splashOverlay?.DismissSafe();
+            Opacity = 1;
+            ShowInTaskbar = true;
+            Show();
             AppendLog($"[Error] {ex.Message}", Color.FromArgb(255, 123, 114));
         }
         finally

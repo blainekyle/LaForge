@@ -296,8 +296,8 @@ STATUS COLORS: green=Validated | yellow=Pending Validation | blue=In Progress/Pa
 UPDATE RECIPE (finishing a feature): in its row AND in the lmt-phase-N roadmap row, swap status-COLOR -> status-green, set badge text to
   "Validated" (keep the leading emoji from an existing green badge), and rewrite the data-tooltip with date + what was verified.
   Edit via a python/PowerShell regex keyed on the unique id; never rewrite the whole file.
-POLICY: no Windows registry or file-association edits (descoped by design). Retail/commercial APKs are deliberately NOT part of the build or tests; do not add them as targets.
-LAST UPDATED: 2026-10-14, v0.9.0 (Phase 6/6A/7 validated; icon engine pending human check). Phase 7 (relay) done. Next: GUI forge builder (must include the online-icon consent checkbox using ApkIconExtractor.ConsentPrompt).
+POLICY: no Windows registry or file-association edits (descoped by design). Retail/commercial APKs are deliberately NOT part of the build or tests; do not add them as targets. Host USB passthrough is out of scope.
+LAST UPDATED: 2026-10-15, v1.0.0-rc1 (GUI Forge Builder & Per-App Uninstall validated across 6 new F-Droid apps; Master Settings, Tier 1 Special-Access AppOps, ABI Pre-Flight Check, and Console Sort/Filter UX implemented; Major Update 1 v2.0 Roadmap added).
 =======================================================================================================
 -->
 
@@ -310,10 +310,10 @@ LAST UPDATED: 2026-10-14, v0.9.0 (Phase 6/6A/7 validated; icon engine pending hu
       </p>
     </div>
     <div class="lmt-meta-box" id="lmt-meta-version">
-      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v0.8.0-gms-licensing-interop</span></div>
+      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v1.0.0-RC1 (Release Candidate 1)</span></div>
       <div><strong>Target Runtime:</strong> Android 14 (API 34 x86_64 + WHPX)</div>
       <div><strong>Display Bridge:</strong> scrcpy v5.0.1 + SDL 3.4.18 (D3D11)</div>
-      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-14 15:08 CDT</span></div>
+      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-15 15:22 CDT</span></div>
     </div>
   </header>
 
@@ -396,17 +396,17 @@ LAST UPDATED: 2026-10-14, v0.9.0 (Phase 6/6A/7 validated; icon engine pending hu
         </tr>
         <tr id="lmt-phase-7">
           <td><code class="elem-id">lmt-phase-7</code></td>
-          <td><strong>Phase 7</strong><br/><small>(Next Phase)</small></td>
-          <td><code class="inline-code">v0.9.0-planned</code></td>
+          <td><strong>Phase 7</strong><br/><small>(File Relay)</small></td>
+          <td><code class="inline-code">v0.9.0</code></td>
           <td><strong>Live <code class="inline-code">ACTION_VIEW</code> File Relay to Active Virtual Displays:</strong> Virtual Display <code class="inline-code">ACTION_VIEW</code> file relay (<code class="inline-code">--display &lt;id&gt;</code>, multi-file, drag-and-drop). Windows registry / file-association edits are intentionally descoped by design.</td>
           <td><span id="lmt-status-phase-7" class="status-badge status-green" data-tooltip="File relay complete 2026-10-14. Registry associations descoped by design; window drag-drop-to-open cancelled.">● Green — Validated</span></td>
         </tr>
         <tr id="lmt-phase-8">
           <td><code class="elem-id">lmt-phase-8</code></td>
-          <td><strong>Phase 8</strong><br/><small>(Final Phase)</small></td>
-          <td><code class="inline-code">v1.0.0-planned</code></td>
-          <td><strong>Graphical APK Builder in <code class="inline-code">LaForge Console</code> &amp; Enterprise APK Hardening:</strong> Visual <em>"+ Forge New APK..."</em> wizard inside <code class="inline-code">LaForgeConsole.exe</code> (drag-and-drop APK, extract real APK icons, preview manifest, configure policies/shares, compile bundle) and compatibility testing for complex apps.</td>
-          <td><span id="lmt-status-phase-8" class="status-badge status-orange" data-tooltip="CLI packager (--forge) is complete, but the graphical '+ Forge New APK...' builder modal inside LaForge Console and enterprise APK validation are planned for Phase 8.">○ Not Implemented</span></td>
+          <td><strong>Phase 8</strong><br/><small>(Release Candidate 1)</small></td>
+          <td><code class="inline-code">v1.0.0-rc1</code></td>
+          <td><strong>Graphical APK Builder, Per-App Uninstall, Master Settings, Branded Splash/Icons &amp; <code class="inline-code">LaForgeSetup.exe</code> Installer:</strong> Visual <em>"+ Forge New APK..."</em> wizard, per-app silent Android uninstall, Master Settings dialog (GPS Location + Windows Host Geo query, Rear/Front Host Webcam selectors with live camera HAL reinit, XInput Gamepad UHID passthrough), Tier 1 Special-Access AppOps auto-grants, pre-flight native ABI inspection, stripped <code class="inline-code">"LaForge - "</code> card titles, 4-tier Activity Priority sorting &amp; filtering, branded <code class="inline-code">laforge.0.png</code>/<code class="inline-code">laforge.ico</code> assets, and <code class="inline-code">LaForgeSetup.exe</code> <code class="inline-code">%APPDATA%\LaForge</code> OS installer.</td>
+          <td><span id="lmt-status-phase-8" class="status-badge status-green" data-tooltip="Locked in and validated by user 2026-10-15 as Release Candidate 1 (v1.0.0-RC1).">● Green — Validated</span></td>
         </tr>
       </tbody>
     </table>
@@ -579,8 +579,14 @@ LAST UPDATED: 2026-10-14, v0.9.0 (Phase 6/6A/7 validated; icon engine pending hu
         <tr id="lmt-packager-gui-builder">
           <td><code class="elem-id">lmt-packager-gui-builder</code></td>
           <td><strong>Graphical APK Builder UI (<code class="inline-code">+ Forge New APK...</code>)</strong></td>
-          <td>Visual wizard inside <code class="inline-code">LaForgeConsole.exe</code> to select any <code class="inline-code">.apk</code> file, preview extracted manifest metadata, set initial <code class="inline-code">HOST</code> share &amp; isolation toggles, and generate a standalone bundle.</td>
-          <td><span id="lmt-status-packager-gui-builder" class="status-badge status-yellow" data-tooltip="Implemented 2026-10-14 (v0.9.1): ForgeWizardDialog.cs - APK browse/drop, manifest preview, isolation toggles, mandatory online-icon confirmation, live forge log. Awaiting user click-through.">◐ Yellow — Pending Validation</span></td>
+          <td>Visual wizard inside <code class="inline-code">LaForgeConsole.exe</code> (<code class="inline-code">ForgeWizardDialog.cs</code>) to select or drag-and-drop any <code class="inline-code">.apk</code> file, preview extracted manifest metadata, configure <code class="inline-code">HOST</code> share &amp; isolation toggles, confirm online icon lookup, and generate a standalone bundle directly into <code class="inline-code">dist/&lt;pkg&gt;</code>.</td>
+          <td><span id="lmt-status-packager-gui-builder" class="status-badge status-green" data-tooltip="Validated by user 2026-10-15 across 6 newly forged F-Droid apps (Numbers and Letters, Omnibeat, PeerTube, PixelDroid, Dicio, Vocaphone).">● Green — Validated</span></td>
+        </tr>
+        <tr id="lmt-packager-abi-preflight">
+          <td><code class="elem-id">lmt-packager-abi-preflight</code></td>
+          <td><strong>Pre-Flight Native ABI Inspection (<code class="inline-code">lib/&lt;abi&gt;/*.so</code>)</strong></td>
+          <td><code class="inline-code">ApkManifestParser.cs</code> and <code class="inline-code">ForgeWizardDialog.cs</code> inspect bundled JNI <code class="inline-code">lib/&lt;abi&gt;/*.so</code> libraries before forging, displaying architecture compatibility (<code class="inline-code">Pure Java/Kotlin</code>, <code class="inline-code">x86_64/x86 Compatible</code>, or <code class="inline-code">ARM-Only</code>) and warning when an APK lacks <code class="inline-code">x86_64</code> libraries (<code class="inline-code">INSTALL_FAILED_NO_MATCHING_ABIS</code>).</td>
+          <td><span id="lmt-status-packager-abi-preflight" class="status-badge status-yellow" data-tooltip="Implemented 2026-10-15 (v1.0.0-rc1): detects ARM-only NDK packages (e.g., com.fireflame.dream, org.woheller69.whisper) during APK preview.">◐ Yellow — Pending Validation</span></td>
         </tr>
       </tbody>
     </table>
@@ -619,6 +625,12 @@ LAST UPDATED: 2026-10-14, v0.9.0 (Phase 6/6A/7 validated; icon engine pending hu
           <td><strong>Non-Destructive <code class="inline-code">MANAGE_EXTERNAL_STORAGE</code> &amp; Pre-Launch Policy Ordering</strong></td>
           <td>Fixed in <code class="inline-code">v0.7.6</code>: <code class="inline-code">EnforcePoliciesOnGuest</code> runs <em>before</em> <code class="inline-code">BindAppToVirtualDisplay</code> and never touches <code class="inline-code">MANAGE_EXTERNAL_STORAGE</code> on an already-running app unless toggled, preventing Android <code class="inline-code">ActivityManager</code> from killing the app 1.5s after launch.</td>
           <td><span id="lmt-status-bridge-safe-storage-appop" class="status-badge status-green" data-tooltip="Validated by user in Step 588.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-bridge-special-access-grants">
+          <td><code class="elem-id">lmt-bridge-special-access-grants</code></td>
+          <td><strong>Tier 1 Special-Access <code class="inline-code">AppOps</code> &amp; Doze Exemption Auto-Grants</strong></td>
+          <td>During sideload (<code class="inline-code">Program.SideloadAndGrantPermissions</code>), automatically grants <code class="inline-code">MANAGE_EXTERNAL_STORAGE</code>, <code class="inline-code">SYSTEM_ALERT_WINDOW</code>, <code class="inline-code">WRITE_SETTINGS</code>, <code class="inline-code">SCHEDULE_EXACT_ALARM</code>, <code class="inline-code">PROJECT_MEDIA</code>, and Doze battery optimization exemption (<code class="inline-code">dumpsys deviceidle whitelist +&lt;pkg&gt;</code>) alongside <code class="inline-code">adb install -r -g</code>.</td>
+          <td><span id="lmt-status-bridge-special-access-grants" class="status-badge status-yellow" data-tooltip="Implemented 2026-10-15 (v1.0.0-rc1): batched special-access AppOps + Doze exemption on first install.">◐ Yellow — Pending Validation</span></td>
         </tr>
         <tr id="lmt-bridge-file-relay-cli">
           <td><code class="elem-id">lmt-bridge-file-relay-cli</code></td>
@@ -682,6 +694,30 @@ LAST UPDATED: 2026-10-14, v0.9.0 (Phase 6/6A/7 validated; icon engine pending hu
           <td>Extract the actual application icon packed inside the APK and indicated by <code class="inline-code">AndroidManifest.xml</code> (<code class="inline-code">android:icon</code> / <code class="inline-code">resources.arsc</code> / adaptive icon rendering) into <code class="inline-code">app.ico</code> and <code class="inline-code">bridge/scrcpy.png</code> on the next full <code class="inline-code">--forge</code> rebuild, falling back to the two-letter monogram badge only if no icon exists in the APK.</td>
           <td><span id="lmt-status-console-icon-change" class="status-badge status-green" data-tooltip="Validated by user 2026-10-14 (v0.9.0): card icon button changes app.ico + scrcpy.png; custom icons survive rebuilds.">● Green — Validated</span></td>
         </tr>
+        <tr id="lmt-console-app-uninstall">
+          <td><code class="elem-id">lmt-console-app-uninstall</code></td>
+          <td><strong>Per-App Silent Android Uninstall &amp; Bundle Removal (<code class="inline-code">🗑 Uninstall App…</code>)</strong></td>
+          <td>Attached to each app card's <code class="inline-code">⚙</code> Settings modal (<code class="inline-code">LaForgeAppRegistry.UninstallApp</code>): terminates any active <code class="inline-code">scrcpy</code>/wrapper process, silently uninstalls the package from the shared Android runtime (<code class="inline-code">adb uninstall</code> + deferred boot reconciliation via <code class="inline-code">uninstalled_packages.txt</code>), and deletes its forged <code class="inline-code">dist/&lt;pkg&gt;</code> folder and <code class="inline-code">.conf</code> policy.</td>
+          <td><span id="lmt-status-console-app-uninstall" class="status-badge status-green" data-tooltip="Validated by user 2026-10-15: confirmed uninstalling, re-forging, and launching Numbers and Letters (fr.pierre.chiffreslettres).">● Green — Validated</span></td>
+        </tr>
+        <tr id="lmt-console-master-settings">
+          <td><code class="elem-id">lmt-console-master-settings</code></td>
+          <td><strong>Master Settings Panel (<code class="inline-code">⚙ Master Settings</code> — Location, Webcams, XInput &amp; Folders)</strong></td>
+          <td><code class="inline-code">LaForgeMasterSettings.cs</code> consolidates the <code class="inline-code">/config (.conf)</code> and <code class="inline-code">/HOST Share</code> folder buttons into a dedicated dialog alongside <strong>Location</strong> (<code class="inline-code">Latitude</code>/<code class="inline-code">Longitude</code> + <code class="inline-code">💾 Save</code> + <code class="inline-code">📍 Get from PC</code> via Windows <code class="inline-code">GeoCoordinateWatcher</code>, pushed live via <code class="inline-code">adb emu geo fix</code>), <strong>Rear/Front Camera Dropdowns</strong> (<code class="inline-code">emulator -webcam-list</code> with automatic camera HAL reinitialization &amp; <code class="inline-code">default_boot</code> snapshot resave), and <strong>XInput / Gamepad UHID Passthrough</strong> (<code class="inline-code">scrcpy --gamepad=uhid</code>).</td>
+          <td><span id="lmt-status-console-master-settings" class="status-badge status-green" data-tooltip="Validated by user 2026-10-15: Fossify Camera and Master Settings confirmed working as mapped.">● Green — Validated</span></td>
+        </tr>
+        <tr id="lmt-console-sort-filter-ux">
+          <td><code class="elem-id">lmt-console-sort-filter-ux</code></td>
+          <td><strong>Stripped <code class="inline-code">"LaForge - "</code> Card Titles &amp; 4-Tier Activity Priority Sort / Filter Bar</strong></td>
+          <td>App cards automatically strip the standalone window prefix (<code class="inline-code">"LaForge - "</code>) while preserving version tags, and the <code class="inline-code">🖼 Change Icon…</code> action resides inside each app's <code class="inline-code">⚙</code> Settings modal. Above the app cards, a header bar provides live text filtering, status pills (<code class="inline-code">All</code> / <code class="inline-code">● Active</code> / <code class="inline-code">○ Inactive</code>), and sorting that defaults to: <strong>(1) Currently Focused Window</strong> (<code class="inline-code">GetForegroundWindow()</code>, <code class="inline-code">★ IN FOCUS</code>) &rarr; <strong>(2) Running in Foreground</strong> &rarr; <strong>(3) Running in Background</strong> &rarr; <strong>(4) Inactive</strong>.</td>
+          <td><span id="lmt-status-console-sort-filter-ux" class="status-badge status-green" data-tooltip="Validated by user 2026-10-15 ('The other changes are perfect').">● Green — Validated</span></td>
+        </tr>
+        <tr id="lmt-console-installer-setup">
+          <td><code class="elem-id">lmt-console-installer-setup</code></td>
+          <td><strong>Branded Splash / App Icons (<code class="inline-code">/img/laforge.0.png</code>, <code class="inline-code">laforge.ico</code>) &amp; <code class="inline-code">%APPDATA%</code> OS Installer (<code class="inline-code">LaForgeSetup.exe</code>)</strong></td>
+          <td>Integrates <code class="inline-code">img/laforge.ico</code> as the primary executable, window, and tray icon across <code class="inline-code">LaForgeConsole.exe</code>, <code class="inline-code">launcher.exe</code>, and <code class="inline-code">LaForgeSetup.exe</code>, and renders the branded <code class="inline-code">img/laforge.0.png</code> logo beside the textual status in <code class="inline-code">LaForgeSplashOverlay.cs</code>. Provides <code class="inline-code">LaForgeSetup.exe</code> (<code class="inline-code">src/LaForge.Installer/</code>) to install <code class="inline-code">LaForge Console</code> into <code class="inline-code">%APPDATA%\LaForge</code>, create Windows Start Menu &amp; Desktop shortcuts, and offer a final-stage <strong>Launch LaForge Console when setup exits</strong> option.</td>
+          <td><span id="lmt-status-console-installer-setup" class="status-badge status-green" data-tooltip="Built and verified 2026-10-15 (v1.0.0): installs to %APPDATA%\LaForge, creates Start Menu and Desktop shortcuts, and supports run-on-exit.">● Green — Validated</span></td>
+        </tr>
       </tbody>
     </table>
   </section>
@@ -734,7 +770,7 @@ LAST UPDATED: 2026-10-14, v0.9.0 (Phase 6/6A/7 validated; icon engine pending hu
   <section class="lmt-section" id="lmt-sec-bundles">
     <div class="section-header">
       <h2>7. Forged Application Bundles &amp; Compatibility Matrix</h2>
-      <span class="section-sub">Per-bundle validation status across all 6 forged apps in dist/ plus future enterprise targets</span>
+      <span class="section-sub">Per-bundle validation status across all forged apps in dist/</span>
     </div>
     <table class="lmt-table">
       <thead>
@@ -779,8 +815,8 @@ LAST UPDATED: 2026-10-14, v0.9.0 (Phase 6/6A/7 validated; icon engine pending hu
           <td><code class="elem-id">lmt-bundle-camera</code></td>
           <td><strong>Fossify Camera</strong><br/><small><code class="inline-code">FossifyCamera.exe</code></small></td>
           <td><code class="inline-code">org.fossify.camera</code><br/><small><code class="inline-code">.activities.MainActivity</code></small></td>
-          <td>Validated live webcam streaming (<code class="inline-code">hw.camera.front = webcam4</code> + <code class="inline-code">hw.camera.back = emulated</code>); <code class="inline-code">v0.7.8</code> updates default window &amp; virtual display dimensions to <code class="inline-code">540x960</code> (portrait) per manifest declaration.</td>
-          <td><span id="lmt-status-bundle-camera" class="status-badge status-green" data-tooltip="Validated by user in Step 588 ('Camera works!'); v0.7.8 sets native 540x960 portrait virtual display dimensions.">● Validated</span></td>
+          <td>Validated live webcam streaming (<code class="inline-code">hw.camera.front = webcam4</code> + <code class="inline-code">hw.camera.back = emulated</code>) and Master Settings live camera reinitialization (<code class="inline-code">v1.0.0</code>).</td>
+          <td><span id="lmt-status-bundle-camera" class="status-badge status-green" data-tooltip="Validated by user 2026-10-15 ('Fossify Camera works completely as mapped now').">● Validated</span></td>
         </tr>
         <tr id="lmt-bundle-cromite">
           <td><code class="elem-id">lmt-bundle-cromite</code></td>
@@ -788,6 +824,13 @@ LAST UPDATED: 2026-10-14, v0.9.0 (Phase 6/6A/7 validated; icon engine pending hu
           <td><code class="inline-code">org.cromite.cromite</code><br/><small><code class="inline-code">org.chromium.chrome.browser.ChromeTabbedActivity</code></small></td>
           <td>Validated network passthrough, web audio streaming, and concurrent audio/media control handoff alongside Fossify Music Player.</td>
           <td><span id="lmt-status-bundle-cromite" class="status-badge status-green" data-tooltip="Validated by user in Steps 582 &amp; 588 (side-by-side web audio and Music Player handoff).">● Validated</span></td>
+        </tr>
+        <tr id="lmt-bundle-fdroid-suite">
+          <td><code class="elem-id">lmt-bundle-fdroid-suite</code></td>
+          <td><strong>F-Droid GUI Forge Validation Suite (6 Apps)</strong><br/><small><code class="inline-code">PierreChiffreslettres.exe</code>, <code class="inline-code">Omnibeat.exe</code>, <code class="inline-code">FramasoftPeertube.exe</code>, <code class="inline-code">Pixeldroid.exe</code>, <code class="inline-code">StypoxDicio.exe</code>, <code class="inline-code">VocahqVocaphone.exe</code></small></td>
+          <td><code class="inline-code">fr.pierre.chiffreslettres</code>, <code class="inline-code">omnibeat.app</code>, <code class="inline-code">org.framasoft.peertube</code>, <code class="inline-code">org.pixeldroid.app</code>, <code class="inline-code">org.stypox.dicio</code>, <code class="inline-code">com.vocahq.vocaphone</code></td>
+          <td>Forged end-to-end via the <code class="inline-code">+ Forge New APK…</code> GUI wizard, sideloaded before virtual display allocation, uninstalled and reinstalled cleanly via Console <code class="inline-code">🗑 Uninstall App…</code>, and validated in live execution.</td>
+          <td><span id="lmt-status-bundle-fdroid-suite" class="status-badge status-green" data-tooltip="Validated by user 2026-10-15 across all 6 F-Droid packages.">● Validated</span></td>
         </tr>
       </tbody>
     </table>
@@ -849,10 +892,10 @@ LAST UPDATED: 2026-10-14, v0.9.0 (Phase 6/6A/7 validated; icon engine pending hu
           <td><code class="elem-id">lmt-bug-camera-validator</code></td>
           <td><strong>Fossify Camera displays <code class="inline-code">"Accessing camera failed"</code> &amp; <code class="inline-code">"Switching camera failed"</code></strong></td>
           <td>
-            <strong>Root Cause (Proven via <code class="inline-code">adb logcat</code>):</strong> AVD <code class="inline-code">config.ini</code> had <code class="inline-code">hw.camera.front = none</code> while Android's system image declares <code class="inline-code">android.hardware.camera.front</code>. When <code class="inline-code">Fossify Camera</code> initialized AndroidX CameraX, <code class="inline-code">CameraValidator</code> threw <code class="inline-code">CameraIdListIncorrectException: Expected camera missing from device (LensFilter:0)</code>, aborting initialization for <em>both</em> cameras.<br/>
-            <strong>Fix (<code class="inline-code">v0.7.7</code>):</strong> Enabled <code class="inline-code">hw.camera.front = webcam4</code> (host Integrated Webcam) alongside <code class="inline-code">hw.camera.back = emulated</code> and cold-booted + saved <code class="inline-code">default_boot</code> snapshot so <code class="inline-code">CameraService</code> exposes 2 cameras (Front ID 10 + Back ID 1).
+            <strong>Root Cause (Proven via <code class="inline-code">adb logcat</code>):</strong> AVD <code class="inline-code">config.ini</code> had <code class="inline-code">hw.camera.front = none</code> (or bound the same physical <code class="inline-code">webcamN</code> handle to both Rear and Front simultaneously, causing QEMU's webcam service to drop the Front camera). When <code class="inline-code">Fossify Camera</code> initialized AndroidX CameraX, <code class="inline-code">CameraValidator</code> threw <code class="inline-code">CameraIdListIncorrectException: Expected camera missing from device</code>.<br/>
+            <strong>Fix (<code class="inline-code">v0.7.7</code> &amp; <code class="inline-code">v1.0.0</code>):</strong> Enforced distinct physical webcam binding in <code class="inline-code">LaForgeMasterSettings.cs</code> (<code class="inline-code">Rear=emulated</code>, <code class="inline-code">Front=webcam4</code>) and added automatic emulator camera HAL reinitialization + <code class="inline-code">default_boot</code> snapshot resave when saving Master Settings.
           </td>
-          <td><span id="lmt-status-bug-camera-validator" class="status-badge status-green" data-tooltip="Validated by user in Step 588 ('Camera works!').">● Validated</span></td>
+          <td><span id="lmt-status-bug-camera-validator" class="status-badge status-green" data-tooltip="Validated by user 2026-10-15 ('Fossify Camera works completely as mapped now').">● Validated</span></td>
         </tr>
         <tr id="lmt-bug-camera-pillarbox-window">
           <td><code class="elem-id">lmt-bug-camera-pillarbox-window</code></td>
@@ -863,6 +906,15 @@ LAST UPDATED: 2026-10-14, v0.9.0 (Phase 6/6A/7 validated; icon engine pending hu
           </td>
           <td><span id="lmt-status-bug-camera-pillarbox-window" class="status-badge status-green" data-tooltip="Validated by user in Step 614 ('Camera fix is perfect. Call it validated.').">● Validated</span></td>
         </tr>
+        <tr id="lmt-bug-newly-forged-gray-screen">
+          <td><code class="elem-id">lmt-bug-newly-forged-gray-screen</code></td>
+          <td><strong>Newly forged APK launches to an empty gray virtual display window</strong></td>
+          <td>
+            <strong>Root Cause:</strong> (1) <code class="inline-code">SideloadAndGrantPermissions</code> checked <code class="inline-code">pm list packages &lt;pkg&gt;</code> (which matches substrings and didn't verify <code class="inline-code">pm path</code>) and ran <em>after</em> <code class="inline-code">scrcpy</code> virtual display creation; (2) <code class="inline-code">RunProcessCaptureOutput</code> discarded <code class="inline-code">stderr</code> (<code class="inline-code">Error type 3: Activity class ... does not exist</code>) whenever <code class="inline-code">stdout</code> was non-empty; (3) <code class="inline-code">StopHeadlessEmulator</code> killed QEMU after only 800ms, leaving <code class="inline-code">read-snapshot.txt</code> and invalidating <code class="inline-code">default_boot</code>.<br/>
+            <strong>Fix (<code class="inline-code">v0.9.2</code>):</strong> Added <code class="inline-code">Program.IsPackageInstalled</code> (<code class="inline-code">pm path</code>), moved <code class="inline-code">SideloadAndGrantPermissions</code> <em>before</em> <code class="inline-code">scrcpy</code> virtual display allocation, combined <code class="inline-code">stdout</code>+<code class="inline-code">stderr</code>, increased graceful QEMU shutdown wait to 5000ms + <code class="inline-code">CleanStaleAvdLocks</code>, and saved a fresh <code class="inline-code">default_boot</code> snapshot.
+          </td>
+          <td><span id="lmt-status-bug-newly-forged-gray-screen" class="status-badge status-green" data-tooltip="Validated by user 2026-10-15 across 6 newly forged F-Droid apps.">● Validated</span></td>
+        </tr>
         <tr id="lmt-bug-cross-dpi-resize-loop">
           <td><code class="elem-id">lmt-bug-cross-dpi-resize-loop</code></td>
           <td><strong>Resizing a window directly across the boundary from a high-DPI monitor into a low-DPI monitor causes a redraw loop</strong></td>
@@ -871,6 +923,14 @@ LAST UPDATED: 2026-10-14, v0.9.0 (Phase 6/6A/7 validated; icon engine pending hu
           </td>
           <td><span id="lmt-status-bug-cross-dpi-resize-loop" class="status-badge status-red" data-tooltip="Known Windows DWM / SDL3 cross-DPI boundary resize limitation; deferred intentionally per user direction (Console Force Stop cleanly recovers).">✖ Known Limitation</span></td>
         </tr>
+        <tr id="lmt-bug-papercript-liveview">
+          <td><code class="elem-id">lmt-bug-papercript-liveview</code></td>
+          <td><strong>Custom hardware-overlay camera viewfinder apps (e.g., <code class="inline-code">com.javimetallab.papercript</code>) render a black liveview on secondary virtual displays</strong></td>
+          <td>
+            <strong>Root Cause &amp; Disposition:</strong> While standard Camera2/CameraX apps (such as <code class="inline-code">org.fossify.camera</code>) render their preview frames cleanly onto virtual displays, certain apps that bind custom hardware-overlay <code class="inline-code">SurfaceView</code> liveview pipelines directly to the primary display compositor do not composite their liveview surface onto secondary <code class="inline-code">scrcpy --new-display</code> virtual displays. Documented as a known limitation per user direction.
+          </td>
+          <td><span id="lmt-status-bug-papercript-liveview" class="status-badge status-red" data-tooltip="Known secondary virtual display liveview compositor limitation for custom SurfaceView camera overlays (e.g. Papercript).">✖ Known Limitation</span></td>
+        </tr>
         <tr id="lmt-bug-dist-adb-path">
           <td><code class="elem-id">lmt-bug-dist-adb-path</code></td>
           <td><strong><code class="inline-code">Win32Exception: 'bridge/adb.exe'</code> when stopping an app from <code class="inline-code">dist\LaForgeConsole.exe</code></strong></td>
@@ -878,6 +938,38 @@ LAST UPDATED: 2026-10-14, v0.9.0 (Phase 6/6A/7 validated; icon engine pending hu
             <strong>Root Cause &amp; Fix (<code class="inline-code">v0.7.5</code>):</strong> <code class="inline-code">ResolveToolPath</code> checked <code class="inline-code">0</code> and <code class="inline-code">2</code> parent levels, skipping <code class="inline-code">1</code> level up (<code class="inline-code">..\bridge\adb.exe</code> from <code class="inline-code">dist\</code>). Updated to check <code class="inline-code">0..3</code> parent levels and guarded <code class="inline-code">StopAppAsync</code> with <code class="inline-code">File.Exists</code> and <code class="inline-code">try/catch</code>.
           </td>
           <td><span id="lmt-status-bug-dist-adb-path" class="status-badge status-green" data-tooltip="Fixed and verified in v0.7.5.">● Validated</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- SECTION 9: MAJOR UPDATE 1 (v2.0) ARCHITECTURAL ROADMAP -->
+  <section class="lmt-section" id="lmt-sec-v2-roadmap">
+    <div class="section-header">
+      <h2>9. Major Update 1 (<code class="inline-code">v2.0</code>) Architectural Roadmap Targets</h2>
+      <span class="section-sub">Next-generation platform expansion targets beyond the Phase 1.0 baseline</span>
+    </div>
+    <table class="lmt-table">
+      <thead>
+        <tr>
+          <th style="width: 195px;">Tracker ID</th>
+          <th style="width: 260px;">Major Update 1 Target</th>
+          <th>Architectural Scope &amp; Design Specification</th>
+          <th style="width: 185px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr id="lmt-v2-arm-translation">
+          <td><code class="elem-id">lmt-v2-arm-translation</code></td>
+          <td><strong>ARM64 / ARMv7 Native Binary Translation Bridge (<code class="inline-code">libndk_translation</code> / Houdini Integration)</strong></td>
+          <td>Integrates an instruction-set translation layer (<code class="inline-code">libndk_translation</code> / Intel Houdini ABI bridge) into the <code class="inline-code">x86_64</code> Android 14 WHPX system image (<code class="inline-code">ro.product.cpu.abilist=x86_64,x86,arm64-v8a,armeabi-v7a,armeabi</code>), enabling transparent execution of ARM-only NDK applications and games without <code class="inline-code">INSTALL_FAILED_NO_MATCHING_ABIS</code> rejections.</td>
+          <td><span id="lmt-status-v2-arm-translation" class="status-badge status-orange" data-tooltip="Pegged to Major Update 1 (v2.0 Roadmap).">○ Planned — Major Update 1</span></td>
+        </tr>
+        <tr id="lmt-v2-host-notification-bridge">
+          <td><code class="elem-id">lmt-v2-host-notification-bridge</code></td>
+          <td><strong>Per-App Host OS Notification Relay (Android-to-Windows Action Center Bridge)</strong></td>
+          <td>Forwards intercepted guest Android notifications from <code class="inline-code">LaForge Console</code> upstream to the native Windows 11 Notification Center (<code class="inline-code">Windows.UI.Notifications.ToastNotificationManager</code>), governed by a per-application opt-in policy toggle (<code class="inline-code">forward_host_notifications=true|false</code> in <code class="inline-code">&lt;pkg&gt;.conf</code>) with click-to-focus window activation.</td>
+          <td><span id="lmt-status-v2-host-notification-bridge" class="status-badge status-orange" data-tooltip="Pegged to Major Update 1 (v2.0 Roadmap).">○ Planned — Major Update 1</span></td>
         </tr>
       </tbody>
     </table>

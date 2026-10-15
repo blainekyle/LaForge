@@ -141,6 +141,7 @@ public static class ApkPackager
         HostFolderBridge.EnsureHostFolderAndShortcut(config.Storage, bundleDir);
 
         // 7. Register app in %LOCALAPPDATA%\LaForge\config\<package>.conf for LaForge Central Console
+        LaForgeAppRegistry.ClearPackageUninstalled(meta.PackageName);
         LaForgeAppRegistry.LoadOrCreate(config, bundleDir);
 
         return bundleDir;
