@@ -37,6 +37,11 @@ public static class ApkPackager
         }
 
         string launcherExePath = Path.Combine(bundleDir, "launcher.exe");
+        if (!File.Exists(launcherExePath) && !string.IsNullOrWhiteSpace(Environment.ProcessPath) && File.Exists(Environment.ProcessPath))
+        {
+            // Forging from an EXE that is not named launcher* (e.g. LaForgeConsole.exe run outside the repo root): reuse the running binary.
+            File.Copy(Environment.ProcessPath, launcherExePath, overwrite: true);
+        }
         string bespokeExePath = Path.Combine(bundleDir, bespokeExeName);
         if (File.Exists(launcherExePath) &&
             !launcherExePath.Equals(bespokeExePath, StringComparison.OrdinalIgnoreCase))

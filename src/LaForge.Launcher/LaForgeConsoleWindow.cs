@@ -136,6 +136,18 @@ public sealed class LaForgeConsoleWindow : Form
             Padding = new Padding(0, 10, 4, 0)
         };
 
+        var btnForgeNew = CreateButton("➕ Forge New APK…", Color.FromArgb(88, 56, 145));
+        btnForgeNew.Click += async (_, _) =>
+        {
+            using var wizard = new ForgeWizardDialog(_baseDir);
+            wizard.ShowDialog(this);
+            if (wizard.Forged)
+            {
+                RebuildAppCards();
+                await RefreshTelemetryAsync();
+            }
+        };
+
         var btnOpenConfigDir = CreateButton("📂 /config (.conf)", Color.FromArgb(45, 55, 72));
         btnOpenConfigDir.Click += (_, _) => OpenFolderInExplorer(LaForgeAppRegistry.GetConfigDirectory());
 
@@ -148,6 +160,7 @@ public sealed class LaForgeConsoleWindow : Form
         var btnExitService = CreateButton("⏻ Quit Console", Color.FromArgb(140, 45, 50));
         btnExitService.Click += (_, _) => ExitService();
 
+        headerActions.Controls.Add(btnForgeNew);
         headerActions.Controls.Add(btnOpenConfigDir);
         headerActions.Controls.Add(btnOpenHostDir);
         headerActions.Controls.Add(btnRefreshNow);
