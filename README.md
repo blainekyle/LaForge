@@ -18,6 +18,30 @@
 
 ---
 
+## 📸 App in Action
+
+### 1. LaForge Console
+*LaForge Central Console displaying managed apps, virtualization controls, and the Android notification center.*  
+![LaForge Console](img/screenshots/01-console-dashboard.png)
+
+### 2. "Forge New APK…" Dialog
+*A populated "Forge New APK..." dialog with automatic package inspection, ABI detection, isolated display configuration, and host folder sharing.*  
+![Populated Forge New APK Dialog](img/screenshots/02-forge-dialog.png)
+
+### 3. VLC Running in LaForge
+*VLC for Android executing seamlessly inside a native desktop window with direct audio and input routing.*  
+![VLC running in LaForge](img/screenshots/03-vlc-running.png)
+
+### 4. Branded Loading Splash Screen
+*Patrickric's ConnectFour Studio launching with splash screen overlay while allocating the isolated Direct3D virtual display.*  
+![ConnectFour Studio Launching Splash](img/screenshots/04-connectfour-splash.png)
+
+### 5. Multi-Window Multitasking & Status Tracking
+*The ConnectFour app running in a manually-resized portrait window beside LaForge Console showing the app's live active status.*  
+![ConnectFour Studio beside LaForge Console](img/screenshots/05-connectfour-portrait-multitasking.png)
+
+---
+
 ## 📥 Getting Started
 
 ### Installation
