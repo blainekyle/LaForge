@@ -14,6 +14,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\LaForge.Launcher\InstallProcessCleanup.cs" Link="InstallProcessCleanup.cs" />
     <EmbeddedResource Include="..\..\img\laforge.ico" LogicalName="LaForge.Installer.laforge.ico" />
     <EmbeddedResource Include="..\..\img\laforge_splash.png" LogicalName="LaForge.Installer.laforge_splash.png" />
     <EmbeddedResource Include="installer_payload.zip" LogicalName="LaForge.Installer.installer_payload.zip" Condition="Exists('installer_payload.zip')" />

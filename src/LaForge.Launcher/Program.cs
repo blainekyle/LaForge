@@ -159,14 +159,51 @@ public static class Program
     [DllImport("kernel32.dll")]
     private static extern IntPtr GetConsoleWindow();
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AttachConsole(int dwProcessId);
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetStdHandle(int nStdHandle);
+
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
     private const int SW_HIDE = 0;
+    private const int ATTACH_PARENT_PROCESS = -1;
+    private const int STD_OUTPUT_HANDLE = -11;
+
+    /// <summary>
+    /// launcher.exe is a GUI-subsystem app (no console window ever). When it is started from a terminal for a CLI switch,
+    /// attach to that terminal so output is visible; from Explorer / shortcuts there is no parent console and this is a no-op.
+    /// </summary>
+    private static void TryAttachParentConsole()
+    {
+        try
+        {
+            IntPtr stdout = GetStdHandle(STD_OUTPUT_HANDLE);
+            if (stdout != IntPtr.Zero && stdout != new IntPtr(-1)) return; // already redirected / has a console
+            if (AttachConsole(ATTACH_PARENT_PROCESS))
+            {
+                Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
+                Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
+            }
+        }
+        catch
+        {
+            // Output simply stays invisible
+        }
+    }
 
     [STAThread]
     public static int Main(string[] args)
     {
+        TryAttachParentConsole();
+
+        if (args.Any(a => a.Equals("--uninstall", StringComparison.OrdinalIgnoreCase) ||
+                          a.Equals("--uninstall-run", StringComparison.OrdinalIgnoreCase)))
+        {
+            return Uninstaller.Run(args);
+        }
         try
         {
             RuntimeProvisioner.ApplyProcessEnvironment();
@@ -182,10 +219,23 @@ public static class Program
             if (args.Any(a => a.Equals("--provision-runtime", StringComparison.OrdinalIgnoreCase)))
             {
                 string provAdb = ResolveToolPath(AppContext.BaseDirectory, "bridge/adb.exe", "adb.exe");
+                DateTime lastStatus = DateTime.MinValue;
+                bool wasReady = RuntimeProvisioner.IsRuntimeReady();
                 bool provisioned = RuntimeProvisioner.ProvisionAsync(
                     provAdb,
                     msg => Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {msg}"),
-                    st => Console.WriteLine($"    {st}")).GetAwaiter().GetResult();
+                    st =>
+                    {
+                        if ((DateTime.UtcNow - lastStatus).TotalSeconds < 5) return;
+                        lastStatus = DateTime.UtcNow;
+                        Console.WriteLine($"    {st}");
+                    }).GetAwaiter().GetResult();
+
+                // This mode is not followed by an app launch: do not leave a VM that WE just provisioned running in the background.
+                if (!wasReady)
+                {
+                    try { StopHeadlessEmulator(provAdb); } catch { /* ignore */ }
+                }
                 return provisioned ? 0 : 1;
             }
 
@@ -1457,7 +1507,7 @@ public static class Program
         {
             FileName = fileName,
             UseShellExecute = false,
-            CreateNoWindow = hidden,
+            CreateNoWindow = true,
             WindowStyle = hidden ? ProcessWindowStyle.Hidden : ProcessWindowStyle.Normal
         };
         foreach (string a in args)

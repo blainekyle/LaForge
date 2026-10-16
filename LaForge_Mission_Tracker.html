@@ -297,7 +297,7 @@ UPDATE RECIPE (finishing a feature): in its row AND in the lmt-phase-N roadmap r
   "Validated" (keep the leading emoji from an existing green badge), and rewrite the data-tooltip with date + what was verified.
   Edit via a python/PowerShell regex keyed on the unique id; never rewrite the whole file.
 POLICY: no Windows registry or file-association edits (descoped by design). Retail/commercial APKs are deliberately NOT part of the build or tests; do not add them as targets. Host USB passthrough is out of scope.
-LAST UPDATED: 2026-10-16, v1.1.1 (first-run Android runtime provisioning for clean PCs + ARM64 first-launch fix); previously 2026-10-15 v1.1.0-arm64 (64-bit ARM binary translation via Google libndk_translation v0.2.3 integrated into AOSP API 34 x86_64 runtime alongside microG + LVL stub; validated on arm64-v8a org.woheller69.whisper).
+LAST UPDATED: 2026-10-16, v1.1.2 (no stray console window; real uninstaller with app/VM removal prompt; installer can download the Android runtime up front); earlier same day v1.1.1 (first-run Android runtime provisioning for clean PCs + ARM64 first-launch fix); previously 2026-10-15 v1.1.0-arm64 (64-bit ARM binary translation via Google libndk_translation v0.2.3 integrated into AOSP API 34 x86_64 runtime alongside microG + LVL stub; validated on arm64-v8a org.woheller69.whisper).
 =======================================================================================================
 -->
 
@@ -310,10 +310,10 @@ LAST UPDATED: 2026-10-16, v1.1.1 (first-run Android runtime provisioning for cle
       </p>
     </div>
     <div class="lmt-meta-box" id="lmt-meta-version">
-      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v1.1.1 (first-run provisioning + ARM64)</span></div>
+      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v1.1.2 (installer-time runtime + real uninstaller)</span></div>
       <div><strong>Target Runtime:</strong> Android 14 (API 34 x86_64 + WHPX + libndk_translation ARM64)</div>
       <div><strong>Display Bridge:</strong> scrcpy v5.0.1 + SDL 3.4.18 (D3D11)</div>
-      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-16 12:45 CDT</span></div>
+      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-16 13:55 CDT</span></div>
     </div>
   </header>
 
@@ -964,6 +964,35 @@ LAST UPDATED: 2026-10-16, v1.1.1 (first-run Android runtime provisioning for cle
             <strong>Fix (<code class="inline-code">v1.1.1</code>):</strong> <code class="inline-code">Program.ConfigureGuestDisplay</code> reads each ARM64 file once from the shell at every session start (before the app launches and before the snapshot is saved). Result 0/3 &rarr; 2/2.
           </td>
           <td><span id="lmt-status-bug-arm64-first-launch-denied" class="status-badge status-yellow" data-tooltip="Fixed and verified 2026-10-16 on a clean-room runtime and via the real launcher pipeline; awaiting user confirmation.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-bug-stray-console-window">
+          <td><code class="elem-id">lmt-bug-stray-console-window</code></td>
+          <td><strong>A black CMD / Windows Terminal window stays open behind LaForge Console (close it and the Console dies)</strong></td>
+          <td>
+            <strong>Root Cause:</strong> <code class="inline-code">launcher.exe</code> / <code class="inline-code">LaForgeConsole.exe</code> was built as a console-subsystem app and tried to <code class="inline-code">ShowWindow(SW_HIDE)</code> its console after it had appeared; under Windows Terminal (default host on Windows 11) that cannot hide anything.<br/>
+            <strong>Fix (<code class="inline-code">v1.1.2</code>):</strong> Built as <code class="inline-code">WinExe</code> (GUI subsystem, verified in the PE header) so no console is ever created. <code class="inline-code">AttachConsole(parent)</code> keeps CLI switches (<code class="inline-code">--inspect</code>, <code class="inline-code">--forge</code>, <code class="inline-code">--runtime-status</code>) printing when started from a terminal. <code class="inline-code">StartBackgroundProcess</code> now always uses <code class="inline-code">CreateNoWindow</code> so console-subsystem children (scrcpy, emulator, adb) cannot open their own window. <em>Note for scripts:</em> as a GUI exe it no longer blocks a shell; use <code class="inline-code">Start-Process -Wait</code> or pipe its output.
+          </td>
+          <td><span id="lmt-status-bug-stray-console-window" class="status-badge status-yellow" data-tooltip="Verified 2026-10-16: installed Console launches with zero new console/terminal processes. Awaiting user confirmation.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-bug-uninstaller-incomplete">
+          <td><code class="elem-id">lmt-bug-uninstaller-incomplete</code></td>
+          <td><strong>Uninstall left adb.exe running and undeleted, no error, the Installed Apps entry, and the Start Menu / Desktop shortcuts</strong></td>
+          <td>
+            <strong>Root Cause:</strong> The registered <code class="inline-code">UninstallString</code> was a raw <code class="inline-code">cmd /c rmdir /s /q</code>: it ignored running processes (adb, emulator, Console), never removed shortcuts or its own registry entry, and swallowed every failure.<br/>
+            <strong>Fix (<code class="inline-code">v1.1.2</code>):</strong> Real uninstaller (<code class="inline-code">Uninstaller.cs</code>, <code class="inline-code">LaForgeConsole.exe --uninstall</code>, also <code class="inline-code">--silent</code> / <code class="inline-code">--remove-apps</code>). Runs from a temp copy so the install folder is not locked; closes Console/apps, then shuts the Android VM and adb server down through the bundled adb, then sweeps until nothing under the folders is alive (ordering matters: the Console respawned adb when adb was killed first). Removes Start Menu/Desktop shortcuts (named and any pointing into the install), the Installed Apps registration and the folder, and lists anything it could not remove. Junctions are removed as links and never traversed; refuses to run in a dev checkout. Shared <code class="inline-code">InstallProcessCleanup.cs</code> is also used by the installer, so upgrading over a running install closes adb/emulator instead of failing on locked files.<br/>
+            <strong>Prompt:</strong> asks whether to also remove all LaForge apps. <em>Yes</em> removes forged app folders (only folders containing payload.apk + config.json), the LaForge Android VM (which holds the installed APKs and their data), config and logs; the HOST folder is always kept. <em>No</em> keeps the VM and app data and tells the user those apps may not work on a new install.
+          </td>
+          <td><span id="lmt-status-bug-uninstaller-incomplete" class="status-badge status-yellow" data-tooltip="Verified 2026-10-16 on a real %APPDATA% install with Console + adb running (both uninstall paths); awaiting user confirmation of the interactive dialogs.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-bug-kept-apps-orphaned">
+          <td><code class="elem-id">lmt-bug-kept-apps-orphaned</code></td>
+          <td><strong>After uninstalling LaForge but choosing to keep its apps, a fresh install may not be able to run those apps</strong></td>
+          <td>
+            <strong>Cause:</strong> The install folder (including <code class="inline-code">dist\</code> launchers) is deleted, but the Android VM, per-app <code class="inline-code">.conf</code> files and installed APKs are kept, so a new installation finds remembered apps whose bundles no longer exist.<br/>
+            <strong>Current workaround:</strong> before reinstalling, remove the leftovers manually &mdash; delete <code class="inline-code">%LOCALAPPDATA%\LaForge\config</code> and the <code class="inline-code">LaForge_x86_64_API34.avd</code> folder under <code class="inline-code">%USERPROFILE%\.android\avd</code> &mdash; or, better, uninstall each app from LaForge Console (<em>⚙ Settings &rarr; Uninstall App</em>) <em>before</em> uninstalling LaForge, which works. Choosing <em>Yes</em> at the uninstall prompt does this automatically.<br/>
+            <strong>Planned:</strong> make a reinstall re-adopt kept apps (re-forge launchers from the stored payload) &mdash; deferred by decision.
+          </td>
+          <td><span id="lmt-status-bug-kept-apps-orphaned" class="status-badge status-red" data-tooltip="Known issue, deferred by user decision 2026-10-16. Workaround documented.">✖ Known Issue</span></td>
         </tr>
       </tbody>
     </table>

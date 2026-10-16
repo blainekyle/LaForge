@@ -10,6 +10,13 @@ namespace LaForge.Installer;
 
 internal static class Program
 {
+    private static void InstallerEngine_Runtime(string installDir)
+    {
+        if (!RuntimeSetup.IsInstalled(installDir))
+        {
+            RuntimeSetup.Run(installDir, Console.WriteLine);
+        }
+    }
     [STAThread]
     public static int Main(string[] args)
     {
@@ -30,6 +37,11 @@ internal static class Program
                     createDesktopShortcut: true,
                     registerInWindows: true,
                     Console.WriteLine);
+
+                if (args.Any(a => a.Equals("--with-runtime", StringComparison.OrdinalIgnoreCase)))
+                {
+                    InstallerEngine_Runtime(defaultInstallDir);
+                }
 
                 if (runOnExitArg)
                 {
@@ -97,20 +109,22 @@ public static class InstallerEngine
         installDir = Path.GetFullPath(installDir);
         log?.Invoke($"Target Installation Directory: {installDir}");
 
-        // 1. Stop any running LaForgeConsole process running from the target directory
+        // 1. Gracefully stop everything running out of the target directory (Console, apps, Android VM, adb server)
         try
         {
-            foreach (var proc in Process.GetProcessesByName("LaForgeConsole"))
+            var stopFailures = LaForge.Shared.InstallProcessCleanup.StopProcessesUnder(
+                new[] { installDir },
+                Path.Combine(installDir, "bridge", "adb.exe"),
+                log);
+            foreach (string failure in stopFailures)
             {
-                try
-                {
-                    proc.Kill(entireProcessTree: true);
-                    proc.WaitForExit(1500);
-                }
-                catch { }
+                log?.Invoke($"Warning: could not stop {failure}");
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            log?.Invoke($"Warning: could not stop running LaForge processes: {ex.Message}");
+        }
 
         Directory.CreateDirectory(installDir);
 
@@ -232,11 +246,12 @@ public static class InstallerEngine
                 if (key != null)
                 {
                     key.SetValue("DisplayName", "LaForge Console");
-                    key.SetValue("DisplayVersion", "1.0.0");
+                    key.SetValue("DisplayVersion", "1.1.2");
                     key.SetValue("Publisher", "LaForge Project");
                     key.SetValue("InstallLocation", installDir);
                     key.SetValue("DisplayIcon", iconPath);
-                    key.SetValue("UninstallString", $"cmd.exe /c rmdir /s /q \"{installDir}\"");
+                    key.SetValue("UninstallString", $"\"{targetExe}\" --uninstall");
+                    key.SetValue("QuietUninstallString", $"\"{targetExe}\" --uninstall --silent");
                     key.SetValue("NoModify", 1, RegistryValueKind.DWord);
                     key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
                 }
@@ -294,6 +309,103 @@ public static class InstallerEngine
     }
 }
 
+/// <summary>
+/// Detects and performs the one-time Android runtime download during installation by running the freshly installed
+/// LaForgeConsole.exe in its headless provisioning mode (the same code the first-launch prompt uses).
+/// </summary>
+public static class RuntimeSetup
+{
+    public static Process? Current { get; private set; }
+
+    private static string DefaultRuntimeRoot => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LaForge", "runtime");
+
+    private static bool HasRuntimeAt(string root) =>
+        File.Exists(Path.Combine(root, "emulator", "emulator.exe")) &&
+        File.Exists(Path.Combine(root, "system-images", "android-34", "default", "x86_64", "system.img"));
+
+    /// <summary>True when the emulator, system image and the LaForge VM snapshot are already on this PC.</summary>
+    public static bool IsInstalled(string installDir)
+    {
+        try
+        {
+            string snapshot = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".android", "avd", "LaForge_x86_64_API34.avd", "snapshots", "default_boot", "snapshot.pb");
+            return File.Exists(snapshot) &&
+                   (HasRuntimeAt(DefaultRuntimeRoot) || HasRuntimeAt(Path.Combine(installDir, "runtime")));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Returns the provisioner's exit code (0 = ready), or -1 if it could not be started / was stopped.</summary>
+    public static int Run(string installDir, Action<string> log)
+    {
+        string exe = Path.Combine(installDir, "LaForgeConsole.exe");
+        if (!File.Exists(exe))
+        {
+            log("LaForgeConsole.exe not found; skipping runtime download.");
+            return -1;
+        }
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = exe,
+            Arguments = "--provision-runtime",
+            WorkingDirectory = installDir,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        using var proc = Process.Start(psi);
+        if (proc == null) return -1;
+        Current = proc;
+        try
+        {
+            proc.OutputDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) log(e.Data.TrimEnd()); };
+            proc.ErrorDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) log(e.Data.TrimEnd()); };
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
+            while (!proc.WaitForExit(1000))
+            {
+                // poll: WaitForExit(int) does not wait for the redirected pipes to reach EOF
+            }
+            Thread.Sleep(300); // let the last output lines flush
+            return proc.ExitCode;
+        }
+        catch
+        {
+            return -1;
+        }
+        finally
+        {
+            Current = null;
+        }
+    }
+
+    /// <summary>Stops an in-progress download (resumable later) and shuts down the half-provisioned VM.</summary>
+    public static void Stop(string installDir)
+    {
+        try
+        {
+            Process? p = Current;
+            if (p != null && !p.HasExited) p.Kill(entireProcessTree: true);
+        }
+        catch { /* ignore */ }
+        try
+        {
+            LaForge.Shared.InstallProcessCleanup.StopProcessesUnder(
+                new[] { Path.Combine(installDir, "runtime") },
+                Path.Combine(installDir, "bridge", "adb.exe"));
+        }
+        catch { /* ignore */ }
+    }
+}
+
 public sealed class SetupWizardForm : Form
 {
     private readonly Panel _stageWelcome;
@@ -304,6 +416,10 @@ public sealed class SetupWizardForm : Form
     private readonly CheckBox _chkStartMenu;
     private readonly CheckBox _chkDesktop;
     private readonly CheckBox _chkRegisterApp;
+    private readonly CheckBox _chkRuntime;
+    private readonly Label _lblRuntimeState;
+    private bool _skipRuntimeRequested;
+    private bool _runtimeStageActive;
 
     private readonly ProgressBar _progressBar;
     private readonly TextBox _txtLog;
@@ -388,7 +504,28 @@ public sealed class SetupWizardForm : Form
         _btnCancel = CreateButton("Cancel", Color.FromArgb(68, 76, 92), new Point(540, 13), new Size(104, 36));
 
         _btnNext.Click += async (_, _) => await OnNextClickedAsync();
-        _btnCancel.Click += (_, _) => Close();
+        _btnCancel.Click += (_, _) =>
+        {
+            if (_runtimeStageActive)
+            {
+                _skipRuntimeRequested = true;
+                _btnCancel.Enabled = false;
+                _txtLog.AppendText("Skipping the runtime download (it will resume on the first app launch)..." + Environment.NewLine);
+                string dirToStop = Path.GetFullPath(_txtInstallDir.Text.Trim());
+                Task.Run(() => RuntimeSetup.Stop(dirToStop));
+            }
+            else
+            {
+                Close();
+            }
+        };
+        FormClosing += (_, _) =>
+        {
+            if (_runtimeStageActive)
+            {
+                try { RuntimeSetup.Stop(Path.GetFullPath(_txtInstallDir.Text.Trim())); } catch { /* ignore */ }
+            }
+        };
 
         bottomBar.Controls.AddRange(new Control[] { _btnBack, _btnNext, _btnCancel });
 
@@ -475,12 +612,55 @@ public sealed class SetupWizardForm : Form
             Cursor = Cursors.Hand
         };
 
+        var lblRuntimeHeader = new Label
+        {
+            Text = "3. Android Runtime (emulator + Android 14 image)",
+            Font = new Font("Segoe UI Semibold", 10.5F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(121, 192, 255),
+            Location = new Point(24, 218),
+            AutoSize = true
+        };
+
+        _chkRuntime = new CheckBox
+        {
+            Text = "Download and set up the Android runtime now  (about 1.2 GB, needed before the first app can run)",
+            Checked = true,
+            Location = new Point(28, 246),
+            AutoSize = true,
+            ForeColor = Color.FromArgb(126, 231, 135),
+            Font = new Font("Segoe UI Semibold", 9.5F, FontStyle.Regular),
+            Cursor = Cursors.Hand
+        };
+
+        _lblRuntimeState = new Label
+        {
+            Text = "",
+            Location = new Point(48, 270),
+            Size = new Size(590, 20),
+            ForeColor = Color.FromArgb(150, 168, 192),
+            Font = new Font("Segoe UI", 8.75F, FontStyle.Regular)
+        };
+
+        void RefreshRuntimeDetection()
+        {
+            string dir;
+            try { dir = Path.GetFullPath(_txtInstallDir.Text.Trim()); }
+            catch { dir = _txtInstallDir.Text.Trim(); }
+            bool present = RuntimeSetup.IsInstalled(dir);
+            _chkRuntime.Checked = !present;
+            _lblRuntimeState.Text = present
+                ? "Android runtime already found on this PC — nothing to download (tick the box to re-check anyway)."
+                : "Not found on this PC. Skip this and LaForge will offer to download it the first time you launch an app.";
+        }
+        RefreshRuntimeDetection();
+        _txtInstallDir.Leave += (_, _) => RefreshRuntimeDetection();
+
         var lblInfoBox = new Label
         {
-            Text = "Ready to install LaForge Console into your user profile (%APPDATA%\\LaForge).\n" +
-                   "No administrator elevation is required. Click 'Install LaForge →' to begin.",
-            Location = new Point(26, 232),
-            Size = new Size(610, 48),
+            Text = "Installs into your user profile (%APPDATA%\\LaForge). No administrator elevation is required.\n" +
+                   "Click 'Install LaForge →' to begin.",
+            Location = new Point(26, 298),
+            Size = new Size(610, 40),
             ForeColor = Color.FromArgb(150, 168, 192),
             Font = new Font("Segoe UI", 9F, FontStyle.Regular)
         };
@@ -488,7 +668,8 @@ public sealed class SetupWizardForm : Form
         _stageWelcome.Controls.AddRange(new Control[]
         {
             lblDirHeader, _txtInstallDir, btnBrowse,
-            lblShortcutsHeader, _chkStartMenu, _chkDesktop, _chkRegisterApp, lblInfoBox
+            lblShortcutsHeader, _chkStartMenu, _chkDesktop, _chkRegisterApp,
+            lblRuntimeHeader, _chkRuntime, _lblRuntimeState, lblInfoBox
         });
 
         // Stage 2: Installing Progress
@@ -604,6 +785,7 @@ public sealed class SetupWizardForm : Form
             bool startMenu = _chkStartMenu.Checked;
             bool desktop = _chkDesktop.Checked;
             bool regApp = _chkRegisterApp.Checked;
+            bool installRuntime = _chkRuntime.Checked;
 
             try
             {
@@ -623,6 +805,32 @@ public sealed class SetupWizardForm : Form
                         });
                 });
 
+                string fullInstallDir = Path.GetFullPath(targetDir);
+                string runtimeOutcome = installRuntime ? "" : "Not downloaded (offered on first app launch)";
+                if (installRuntime)
+                {
+                    _txtLog.AppendText(Environment.NewLine + "--- Downloading and setting up the Android runtime (one time) ---" + Environment.NewLine);
+                    _runtimeStageActive = true;
+                    _btnCancel.Text = "Skip download";
+                    _btnCancel.Enabled = true;
+
+                    int code = await Task.Run(() => RuntimeSetup.Run(fullInstallDir, msg =>
+                    {
+                        if (!IsDisposed)
+                        {
+                            BeginInvoke(() => _txtLog.AppendText(msg + Environment.NewLine));
+                        }
+                    }));
+
+                    _runtimeStageActive = false;
+                    _btnCancel.Enabled = false;
+                    runtimeOutcome = _skipRuntimeRequested
+                        ? "Skipped (offered on first app launch)"
+                        : code == 0
+                            ? "Ready"
+                            : "Not finished (resumes on first app launch)";
+                }
+
                 _installFinished = true;
                 _progressBar.Style = ProgressBarStyle.Blocks;
                 _progressBar.Value = 100;
@@ -631,12 +839,12 @@ public sealed class SetupWizardForm : Form
                 _stageProgress.Visible = false;
                 _stageComplete.Visible = true;
 
-                string fullInstallDir = Path.GetFullPath(targetDir);
                 _lblCompleteSummary.Text =
                     $"Installed Location : {fullInstallDir}\n" +
                     $"Main Executable    : {Path.Combine(fullInstallDir, "LaForgeConsole.exe")}\n" +
                     $"Start Menu Shortcut: {(startMenu ? "Created (Programs\\LaForge\\LaForge Console.lnk)" : "Skipped")}\n" +
                     $"Desktop Shortcut   : {(desktop ? "Created (Desktop\\LaForge Console.lnk)" : "Skipped")}\n" +
+                    $"Android Runtime    : {runtimeOutcome}\n" +
                     $"Config & HOST Dir  : %LOCALAPPDATA%\\LaForge";
 
                 _btnNext.Text = "Finish";
