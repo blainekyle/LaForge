@@ -17,6 +17,7 @@
     <!-- Reference WPF only for WIC image decoding (WebP launcher icons); no WPF UI or implicit usings. -->
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
     <EmbeddedResource Include="..\..\img\laforge.ico" LogicalName="LaForge.Launcher.laforge.ico" />
+    <EmbeddedResource Include="Resources\avd_config.ini" LogicalName="LaForge.Launcher.avd_config.ini" />
     <EmbeddedResource Include="..\..\img\laforge_splash.png" LogicalName="LaForge.Launcher.laforge_splash.png" />
   </ItemGroup>
 

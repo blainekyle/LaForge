@@ -297,7 +297,7 @@ UPDATE RECIPE (finishing a feature): in its row AND in the lmt-phase-N roadmap r
   "Validated" (keep the leading emoji from an existing green badge), and rewrite the data-tooltip with date + what was verified.
   Edit via a python/PowerShell regex keyed on the unique id; never rewrite the whole file.
 POLICY: no Windows registry or file-association edits (descoped by design). Retail/commercial APKs are deliberately NOT part of the build or tests; do not add them as targets. Host USB passthrough is out of scope.
-LAST UPDATED: 2026-10-15, v1.1.0-arm64 (64-bit ARM binary translation via Google libndk_translation v0.2.3 integrated into AOSP API 34 x86_64 runtime alongside microG + LVL stub; validated on arm64-v8a org.woheller69.whisper).
+LAST UPDATED: 2026-10-16, v1.1.1 (first-run Android runtime provisioning for clean PCs + ARM64 first-launch fix); previously 2026-10-15 v1.1.0-arm64 (64-bit ARM binary translation via Google libndk_translation v0.2.3 integrated into AOSP API 34 x86_64 runtime alongside microG + LVL stub; validated on arm64-v8a org.woheller69.whisper).
 =======================================================================================================
 -->
 
@@ -310,10 +310,10 @@ LAST UPDATED: 2026-10-15, v1.1.0-arm64 (64-bit ARM binary translation via Google
       </p>
     </div>
     <div class="lmt-meta-box" id="lmt-meta-version">
-      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v1.1.0-arm64 (RC1 + ARM64 Translation)</span></div>
+      <div><strong>Current Build Tag:</strong> <span id="lmt-current-tag">v1.1.1 (first-run provisioning + ARM64)</span></div>
       <div><strong>Target Runtime:</strong> Android 14 (API 34 x86_64 + WHPX + libndk_translation ARM64)</div>
       <div><strong>Display Bridge:</strong> scrcpy v5.0.1 + SDL 3.4.18 (D3D11)</div>
-      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-15 17:14 CDT</span></div>
+      <div><strong>Last Updated:</strong> <span id="lmt-last-updated">2026-10-16 12:45 CDT</span></div>
     </div>
   </header>
 
@@ -945,6 +945,25 @@ LAST UPDATED: 2026-10-15, v1.1.0-arm64 (64-bit ARM binary translation via Google
             <strong>Root Cause &amp; Fix (<code class="inline-code">v0.7.5</code>):</strong> <code class="inline-code">ResolveToolPath</code> checked <code class="inline-code">0</code> and <code class="inline-code">2</code> parent levels, skipping <code class="inline-code">1</code> level up (<code class="inline-code">..\bridge\adb.exe</code> from <code class="inline-code">dist\</code>). Updated to check <code class="inline-code">0..3</code> parent levels and guarded <code class="inline-code">StopAppAsync</code> with <code class="inline-code">File.Exists</code> and <code class="inline-code">try/catch</code>.
           </td>
           <td><span id="lmt-status-bug-dist-adb-path" class="status-badge status-green" data-tooltip="Fixed and verified in v0.7.5.">● Validated</span></td>
+        </tr>
+        <tr id="lmt-bug-clean-pc-no-runtime">
+          <td><code class="elem-id">lmt-bug-clean-pc-no-runtime</code></td>
+          <td><strong>On a PC that never ran LaForge, forged apps open the Control Console with <code class="inline-code">AWAITING VM / DEVICE</code> and <code class="inline-code">Provisioning script not found</code></strong></td>
+          <td>
+            <strong>Root Cause:</strong> The installer shipped only the bridge, GMS assets and launcher. The Android Emulator and Android 14 system image existed only on the dev machine (the installer's only link to them was a junction to <code class="inline-code">c:\ag\APKForge\runtime\emulator</code>), no AVD or <code class="inline-code">default_boot</code> snapshot was ever created, the ARM64 translation bundle was not packaged, and the <em>Provision SDK Runtime</em> button called a <code class="inline-code">provision_runtime.ps1</code> that was never installed. Testing missed it because a runtime was always already present.<br/>
+            <strong>Fix (<code class="inline-code">v1.1.1</code>):</strong> New <code class="inline-code">RuntimeProvisioner.cs</code> performs one-time, resumable first-run setup (consent prompt, then: Google emulator <code class="inline-code">37.2.12</code> + platform-tools <code class="inline-code">37.0.1</code> + Android 14 image <code class="inline-code">x86_64-34_r04</code> with SHA-256 verification, AVD from an embedded template, first boot, ARM64 <code class="inline-code">libndk_translation</code> injection with the remount/reboot dance, <code class="inline-code">default_boot</code> snapshot). Triggered automatically on launch and by the Provision button; progress on the splash, full log on failure (<code class="inline-code">%LOCALAPPDATA%\LaForge\logs\provision.log</code>). Installer now ships <code class="inline-code">runtime\arm64\ndk_translation_arm64_api34.tar.gz</code> and no longer junctions the emulator. Emulator is pinned to LaForge's own SDK root/AVD home so an existing Android Studio install cannot redirect it. <code class="inline-code">--runtime-status</code> / <code class="inline-code">--provision-runtime</code> CLI switches and <code class="inline-code">LAFORGE_AUTO_PROVISION=1</code> for unattended installs.<br/>
+            <strong>Verified:</strong> clean-room run on this machine with scratch SDK root + AVD home: download, verified image, boot, ARM64 overlay, snapshot (~4 min after download), then Whisper (arm64-only) running on a virtual display driven by the real launcher. Clean-room testing also exposed that the emulator refuses to start without <code class="inline-code">platform-tools</code> in the SDK root (<code class="inline-code">Broken AVD system path</code>) and that the first-pass image pin (<code class="inline-code">r02</code>) was a different Android build than the validated one; both fixed.
+          </td>
+          <td><span id="lmt-status-bug-clean-pc-no-runtime" class="status-badge status-yellow" data-tooltip="Fixed and verified in a simulated clean-PC environment on the dev machine (2026-10-16); awaiting confirmation on a physically separate PC.">◐ Pending Validation</span></td>
+        </tr>
+        <tr id="lmt-bug-arm64-first-launch-denied">
+          <td><code class="elem-id">lmt-bug-arm64-first-launch-denied</code></td>
+          <td><strong>First ARM64 app launch after a boot or snapshot restore crashes with <code class="inline-code">native_bridge_initialize: unable to open /system/bin/arm64/app_process64: Permission denied</code>; relaunch works</strong></td>
+          <td>
+            <strong>Root Cause:</strong> The ARM64 translation files live in the writable overlay layer. The first lookup of them from an app process after a boot/snapshot restore fails (no AVC denial, SELinux already permissive), while a prior lookup from the shell succeeds. Reproduced 3/3 on the clean-room runtime.<br/>
+            <strong>Fix (<code class="inline-code">v1.1.1</code>):</strong> <code class="inline-code">Program.ConfigureGuestDisplay</code> reads each ARM64 file once from the shell at every session start (before the app launches and before the snapshot is saved). Result 0/3 &rarr; 2/2.
+          </td>
+          <td><span id="lmt-status-bug-arm64-first-launch-denied" class="status-badge status-yellow" data-tooltip="Fixed and verified 2026-10-16 on a clean-room runtime and via the real launcher pipeline; awaiting user confirmation.">◐ Pending Validation</span></td>
         </tr>
       </tbody>
     </table>

@@ -1,0 +1,60 @@
+{
+  "app": {
+    "title": "LaForge - Framasoft Peertube (v2.3.0)",
+    "executable_name": "FramasoftPeertube.exe",
+    "icon_path": "./app.ico",
+    "apk_path": "./payload.apk",
+    "package_name": "org.framasoft.peertube",
+    "activity_name": "org.framasoft.peertube.MainActivity"
+  },
+  "runtime": {
+    "emulator_path": "emulator",
+    "adb_path": "adb",
+    "avd_name": "LaForge_x86_64_API34",
+    "snapshot": "default_boot",
+    "gpu_mode": "host",
+    "whpx": true,
+    "headless": true,
+    "boot_timeout_sec": 60
+  },
+  "display": {
+    "scrcpy_path": "bridge/scrcpy.exe",
+    "render_driver": "direct3d",
+    "window": {
+      "x": 140,
+      "y": 140,
+      "width": 1280,
+      "height": 720,
+      "borderless": false,
+      "always_on_top": false,
+      "fullscreen": false
+    },
+    "vsync": true,
+    "max_fps": 60,
+    "stay_awake": true,
+    "auto_hide_console": true
+  },
+  "storage": {
+    "enable_host_mount": true,
+    "host_folder_path": "%LOCALAPPDATA%\\LaForge\\HOST",
+    "guest_mount_path": "/sdcard/HOST",
+    "create_shortcut": true
+  },
+  "relays": {
+    "remote_staging_dir": "/sdcard/Download",
+    "associations": {
+      ".zip": {
+        "mime_type": "application/zip",
+        "action": "android.intent.action.VIEW"
+      },
+      ".txt": {
+        "mime_type": "text/plain",
+        "action": "android.intent.action.VIEW"
+      },
+      ".pdf": {
+        "mime_type": "application/pdf",
+        "action": "android.intent.action.VIEW"
+      }
+    }
+  }
+}

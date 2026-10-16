@@ -124,9 +124,7 @@ public sealed class LaForgeMasterSettings
     {
         try
         {
-            string cfgIni = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".android", "avd", $"{avdName}.avd", "config.ini");
+            string cfgIni = Path.Combine(RuntimeProvisioner.GetAvdDir(avdName), "config.ini");
             if (!File.Exists(cfgIni)) return;
 
             string rearCam = ExtractCameraToken(settings.RearCamera);
@@ -166,9 +164,7 @@ public sealed class LaForgeMasterSettings
         try
         {
             if (string.IsNullOrWhiteSpace(snapshotName)) return true;
-            string snapHwIni = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".android", "avd", $"{avdName}.avd", "snapshots", snapshotName, "hardware.ini");
+            string snapHwIni = Path.Combine(RuntimeProvisioner.GetAvdDir(avdName), "snapshots", snapshotName, "hardware.ini");
             if (!File.Exists(snapHwIni)) return false;
 
             string expectedRear = ExtractCameraToken(settings.RearCamera);

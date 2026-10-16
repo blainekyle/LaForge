@@ -149,22 +149,20 @@ public static class InstallerEngine
             throw new InvalidOperationException("Embedded installer payload archive was not found.");
         }
 
-        // 3. Link Android SDK emulator runtime via directory junction if available so we don't duplicate multi-GB images
+        // 3. The Android emulator + system image are NOT linked or bundled: they are downloaded once on first launch
+        //    (RuntimeProvisioner). Earlier installer builds junctioned runtime\emulator to a local SDK, which breaks on any
+        //    machine that does not have one; remove such a stale link so first-run provisioning starts clean.
         string targetRuntimeEmulator = Path.Combine(installDir, "runtime", "emulator");
-        string[] candidateEmuDirs =
+        try
         {
-            Path.Combine(AppContext.BaseDirectory, "runtime", "emulator"),
-            @"c:\ag\APKForge\runtime\emulator",
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Android", "Sdk", "emulator")
-        };
-
-        string? sourceEmuDir = candidateEmuDirs.FirstOrDefault(Directory.Exists);
-        if (!string.IsNullOrEmpty(sourceEmuDir) && !Directory.Exists(targetRuntimeEmulator))
-        {
-            Directory.CreateDirectory(Path.Combine(installDir, "runtime"));
-            CreateDirectoryJunction(targetRuntimeEmulator, sourceEmuDir);
-            log?.Invoke($"Linked Android Emulator Runtime -> {sourceEmuDir}");
+            var emuInfo = new DirectoryInfo(targetRuntimeEmulator);
+            if (emuInfo.Exists && emuInfo.Attributes.HasFlag(FileAttributes.ReparsePoint))
+            {
+                emuInfo.Delete(recursive: false);
+                log?.Invoke("Removed stale emulator link from a previous installer version.");
+            }
         }
+        catch { }
 
         // 4. Link existing dist/ bundles via directory junction if installing from a workspace with forged apps
         string targetDistDir = Path.Combine(installDir, "dist");

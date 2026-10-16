@@ -485,6 +485,14 @@ public sealed class LaForgeWindow : Form
             AppendLog($"[Step 3/4] Target APK Launch Command: {adbExe} {string.Join(' ', apkArgs)}");
 
             string attachedDevice = await Task.Run(() => Program.GetConnectedAdbDevice(adbExe));
+            if (string.IsNullOrEmpty(attachedDevice) && adbReady && !await Task.Run(RuntimeProvisioner.IsRuntimeReady))
+            {
+                if (await EnsureRuntimeProvisionedAsync(adbExe, iconCandidate, askConsent: true))
+                {
+                    emulatorExe = Program.ResolveEmulatorPath(_configDir, _config.Runtime.EmulatorPath);
+                    attachedDevice = await Task.Run(() => Program.GetConnectedAdbDevice(adbExe));
+                }
+            }
             bool coldBootedEmulator = false;
             if (string.IsNullOrEmpty(attachedDevice) && File.Exists(emulatorExe))
             {
@@ -1162,26 +1170,114 @@ public sealed class LaForgeWindow : Form
         }
     }
 
-    private void OnProvisionRuntimeClicked(object? sender, EventArgs e)
+    private async void OnProvisionRuntimeClicked(object? sender, EventArgs e)
     {
-        string scriptCandidate = Path.GetFullPath(Path.Combine(_configDir, "provision_runtime.ps1"));
-        if (!File.Exists(scriptCandidate))
+        _btnProvision.Enabled = false;
+        try
         {
-            scriptCandidate = Path.GetFullPath(Path.Combine(_configDir, "..", "..", "provision_runtime.ps1"));
+            string adbExe = Program.ResolveToolPath(_configDir, _config.Runtime.AdbPath, "adb.exe");
+            string iconCandidate = Path.IsPathRooted(_config.App.IconPath)
+                ? _config.App.IconPath
+                : Path.GetFullPath(Path.Combine(_configDir, _config.App.IconPath));
+            if (RuntimeProvisioner.IsRuntimeReady())
+            {
+                AppendLog("The Android runtime is already provisioned. Use 'Boot & Attach scrcpy' to start it.", Color.FromArgb(126, 231, 135));
+                return;
+            }
+            if (await EnsureRuntimeProvisionedAsync(adbExe, iconCandidate, askConsent: false))
+            {
+                _lblRuntimeStatus.Text = "Android Guest Runtime\nPROVISIONED & RUNNING";
+                _lblRuntimeStatus.ForeColor = Color.FromArgb(126, 231, 135);
+            }
+        }
+        finally
+        {
+            if (!IsDisposed) _btnProvision.Enabled = true;
+        }
+    }
+
+    /// <summary>
+    /// One-time Android runtime setup (emulator + Android 14 image + ARM64 translation + quick-boot snapshot).
+    /// Progress is shown on the splash overlay; on failure the complete log is replayed into the visible console.
+    /// </summary>
+    private async Task<bool> EnsureRuntimeProvisionedAsync(string adbExe, string iconCandidate, bool askConsent)
+    {
+        _splashOverlay?.DismissSafe();
+
+        if (askConsent && Environment.GetEnvironmentVariable("LAFORGE_AUTO_PROVISION") == "1")
+        {
+            askConsent = false;
         }
 
-        if (!File.Exists(scriptCandidate))
+        if (askConsent)
         {
-            AppendLog($"Provisioning script not found at: {scriptCandidate}", Color.FromArgb(255, 123, 114));
-            return;
+            var answer = MessageBox.Show(
+                "LaForge needs to set up its Android runtime before the first app can start.\n\n" +
+                "This is a one-time step and requires an internet connection:\n" +
+                $"  • Android Emulator and Android 14 system image from Google ({RuntimeProvisioner.DownloadSizeText})\n" +
+                "  • 64-bit ARM app translation layer (bundled)\n\n" +
+                "It takes roughly 10–20 minutes depending on your connection. Set it up now?",
+                "LaForge — First-time setup",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+            if (answer != DialogResult.Yes)
+            {
+                Opacity = 1;
+                ShowInTaskbar = true;
+                Show();
+                AppendLog("Android runtime setup was declined. Click 'Provision SDK Runtime' whenever you are ready.", Color.FromArgb(255, 166, 87));
+                return false;
+            }
         }
 
-        AppendLog($"Launching Android Runtime Provisioner: {scriptCandidate}", Color.FromArgb(88, 166, 255));
-        Process.Start(new ProcessStartInfo
+        _splashOverlay = new LaForgeSplashOverlay(
+            "Setting up LaForge (one time)...",
+            "Preparing the Android runtime — this can take 10–20 minutes on first run...",
+            iconCandidate,
+            _config.Display.Window);
+        _splashOverlay.Show();
+        _splashOverlay.Refresh();
+
+        var transcript = new List<string>();
+        void Log(string m)
         {
-            FileName = "pwsh",
-            Arguments = $"-NoExit -ExecutionPolicy Bypass -File \"{scriptCandidate}\"",
-            UseShellExecute = true
-        });
+            lock (transcript) transcript.Add($"[{DateTime.Now:HH:mm:ss}] {m}");
+            AppendLog(m, Color.FromArgb(165, 214, 255));
+        }
+
+        bool ok = await Task.Run(() => RuntimeProvisioner.ProvisionAsync(
+            adbExe,
+            Log,
+            s => _splashOverlay?.UpdateStatus("Setting up LaForge (one time)...", s)));
+
+        if (!ok)
+        {
+            _splashOverlay?.DismissSafe();
+            Opacity = 1;
+            ShowInTaskbar = true;
+            Show();
+            _logBox.Clear();
+            lock (transcript)
+            {
+                foreach (string line in transcript)
+                {
+                    _logBox.SelectionColor = line.Contains("Error", StringComparison.OrdinalIgnoreCase)
+                        ? Color.FromArgb(255, 123, 114)
+                        : Color.FromArgb(165, 214, 255);
+                    _logBox.AppendText(line + Environment.NewLine);
+                }
+            }
+            _logBox.ScrollToCaret();
+            MessageBox.Show(
+                "The Android runtime could not be set up. The console shows what went wrong; progress is kept, so launching the app again resumes from where it stopped.\n\n" +
+                $"Detailed log: {RuntimeProvisioner.GetLogPath()}",
+                "LaForge — Setup incomplete",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return false;
+        }
+
+        _splashOverlay?.UpdateStatus($"Loading {LaForgeAppRegistry.GetFriendlyAppName(_config.App.Title, _config.App.PackageName)}...", "Android runtime ready. Starting application...");
+        return true;
     }
 }

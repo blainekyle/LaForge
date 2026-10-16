@@ -169,6 +169,26 @@ public static class Program
     {
         try
         {
+            RuntimeProvisioner.ApplyProcessEnvironment();
+
+            if (args.Any(a => a.Equals("--runtime-status", StringComparison.OrdinalIgnoreCase)))
+            {
+                Console.WriteLine($"Runtime root : {RuntimeProvisioner.FindRuntimeRoot()}");
+                Console.WriteLine($"AVD home     : {RuntimeProvisioner.GetAvdHome()}");
+                Console.WriteLine($"Ready        : {RuntimeProvisioner.IsRuntimeReady()}");
+                return 0;
+            }
+
+            if (args.Any(a => a.Equals("--provision-runtime", StringComparison.OrdinalIgnoreCase)))
+            {
+                string provAdb = ResolveToolPath(AppContext.BaseDirectory, "bridge/adb.exe", "adb.exe");
+                bool provisioned = RuntimeProvisioner.ProvisionAsync(
+                    provAdb,
+                    msg => Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {msg}"),
+                    st => Console.WriteLine($"    {st}")).GetAwaiter().GetResult();
+                return provisioned ? 0 : 1;
+            }
+
             string baseDir = AppContext.BaseDirectory;
             string configPath = Path.Combine(baseDir, "config.json");
             if (!File.Exists(configPath))
@@ -575,6 +595,7 @@ public static class Program
         string appDataLaForge = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LaForge");
         string[] candidates =
         {
+            Path.Combine(RuntimeProvisioner.FindRuntimeRoot(), "emulator", "emulator.exe"),
             Path.GetFullPath(Path.Combine(configDir, "runtime", "emulator", "emulator.exe")),
             Path.GetFullPath(Path.Combine(configDir, "..", "runtime", "emulator", "emulator.exe")),
             Path.GetFullPath(Path.Combine(configDir, "..", "..", "runtime", "emulator", "emulator.exe")),
@@ -656,6 +677,20 @@ public static class Program
 
             // Always ensure host microphone bridge is active in QEMU for this emulator session
             RunProcessCaptureOutput(adbExe, new[] { "emu", "avd", "hostmicon" }, 2500);
+
+            // The ARM64 translation files live in the writable overlay; the first lookup of them from an app process after a
+            // boot/snapshot restore fails with "native_bridge_initialize: unable to open /system/bin/arm64/app_process64:
+            // Permission denied". Resolving them once from the shell first avoids that, and gets baked into the snapshot.
+            RunProcessCaptureOutput(
+                adbExe,
+                new[]
+                {
+                    "shell",
+                    "find /system/bin/arm64 /system/lib64/arm64 /system/etc/binfmt_misc -type f 2>/dev/null | " +
+                    "while read f; do head -c 1 \"$f\" >/dev/null 2>&1; done; " +
+                    "ls /system/lib64/libndk_translation*.so >/dev/null 2>&1"
+                },
+                8000);
 
             // Push Master Settings GPS coordinates to the running guest
             LaForgeMasterSettings.ApplyLocationToGuest(adbExe);
@@ -883,9 +918,7 @@ public static class Program
                 return;
             }
 
-            string avdDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".android", "avd", $"{avdName}.avd");
+            string avdDir = RuntimeProvisioner.GetAvdDir(avdName);
             if (!Directory.Exists(avdDir))
             {
                 return;
