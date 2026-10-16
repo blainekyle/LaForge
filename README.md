@@ -1,3 +1,6 @@
+<p align="center">
+  <img src="img/laforge_splash.png" alt="LaForge" style="max-height: 20vh; width: auto;" />
+</p>
 # LaForge 🚀
 
 > **Turn any Android APK into a native-feeling Windows desktop application.**  
