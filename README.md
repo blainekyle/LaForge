@@ -1,13 +1,17 @@
-<p align="center">
-  <img src="img/laforge_splash.png" alt="LaForge" style="max-height: 20vh; width: auto;" />
-</p>
-# LaForge 🚀
-
-> **Turn any Android APK into a native-feeling Windows desktop application.**  
-> Seamless, isolated, high-performance Android app execution on Windows with zero terminal clutter.
+<table>
+  <tr>
+    <td align="left" valign="middle">
+      <h1>LaForge</h1>
+      <p><strong>Turn any Android APK into a native-feeling Windows desktop application.</strong><br>
+      Seamless, isolated, high-performance Android app execution on Windows with zero terminal clutter.</p>
+    </td>
+    <td align="center" valign="middle" width="30%">
+      <img src="img/laforge_splash.png" alt="LaForge" height="180" />
+    </td>
+  </tr>
+</table>
 
 ---
-
 ## ✨ Features
 
 - **Native Windows Desktop Experience**: Each forged APK gets its own dedicated Windows shortcut, icon, and native window border—running just like a standard desktop program.
