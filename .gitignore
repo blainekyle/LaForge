@@ -13,6 +13,9 @@ bridge/*
 samples/*.apk
 dist/*/payload.apk
 dist/*/bridge/*
+dist/com.*
+dist/fr.*
+dist/omnibeat.app/
 
 # Temporary / OS files
 .DS_Store
@@ -23,7 +26,11 @@ Thumbs.db
 # local build/test scratch
 __pycache__/
 publish_out/build/
-publish/launcher/
+publish/
+LaForgeSetup.exe
+dist/LaForgeSetup.exe
+*.zip
+src/LaForge.Installer/installer_payload.zip
 tests/test_assets/root_explorer.apk
 tests/test_assets/**/.gradle/
 tests/test_assets/**/build/
