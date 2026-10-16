@@ -533,8 +533,11 @@ public sealed class SetupWizardForm : Form
         _stageWelcome = new Panel
         {
             Dock = DockStyle.Fill,
+            AutoScroll = true,
+            AutoScrollMargin = new Size(0, 16),
             Padding = new Padding(26, 18, 26, 18)
         };
+        _stageWelcome.MouseEnter += (_, _) => _stageWelcome.Focus();
 
         var lblDirHeader = new Label
         {
@@ -676,6 +679,8 @@ public sealed class SetupWizardForm : Form
         _stageProgress = new Panel
         {
             Dock = DockStyle.Fill,
+            AutoScroll = true,
+            AutoScrollMargin = new Size(0, 16),
             Visible = false
         };
 
@@ -715,6 +720,8 @@ public sealed class SetupWizardForm : Form
         _stageComplete = new Panel
         {
             Dock = DockStyle.Fill,
+            AutoScroll = true,
+            AutoScrollMargin = new Size(0, 16),
             Visible = false
         };
 
